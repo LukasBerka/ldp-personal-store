@@ -1,0 +1,39 @@
+[project]
+name = "app"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+authors = [
+    { name = "LukasBerka", email = "lukasberkacek@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard]>=0.136.3",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pyrefly>=1.0.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.15",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["."]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+
+[tool.pyrefly]
+project-includes = ["app", "tests"]
+search-path = ["."]
+python-version = "3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
