@@ -9,6 +9,8 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "fastapi[standard]>=0.136.3",
+    "pydantic-settings>=2.14.1",
+    "rdflib>=7.6.0",
 ]
 
 [tool.uv]

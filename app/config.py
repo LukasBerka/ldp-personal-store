@@ -1,0 +1,66 @@
+"""Application configuration for the Personal LDP Pod.
+
+Defines the :class:`Settings` model (loaded from environment / ``.env`` with the
+``LDP_`` prefix), the cached :func:`get_settings` singleton, a FastAPI dependency
+alias, and the boot-time TLS precondition check.
+"""
+
+from functools import lru_cache
+from pathlib import Path
+from typing import Annotated, Literal
+
+from fastapi import Depends
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="LDP_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+
+    # All LDP resource URIs are relative to this; must end with "/"
+    base_uri: str = "http://localhost:8000/"
+
+    # Filesystem root for pod data; created on first write
+    storage_root: Path = Path("./data")
+
+    host: str = "127.0.0.1"
+    port: int = 8000
+
+    # TLS enforcement policy (see check_tls_precondition below)
+    # "off"        — no TLS; only safe when host is loopback
+    # "required"   — uvicorn terminates TLS (ssl_keyfile + ssl_certfile must be set at launch)
+    # "terminated" — a trusted reverse proxy terminates TLS upstream (trust the deployment)
+    tls_mode: Literal["off", "required", "terminated"] = "off"
+
+    @field_validator("base_uri")
+    @classmethod
+    def _ensure_trailing_slash(cls, v: str) -> str:
+        return v if v.endswith("/") else v + "/"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+
+_LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def check_tls_precondition(settings: Settings) -> None:
+    """Raise RuntimeError if the server would serve plaintext on a non-loopback interface.
+
+    Called once from the lifespan startup hook, before accepting requests.
+    """
+    if settings.tls_mode == "off" and settings.host not in _LOOPBACK_HOSTS:
+        raise RuntimeError(
+            f"TLS is required: tls_mode='off' but host='{settings.host}' is not loopback. "
+            "Set LDP_TLS_MODE to 'required' (uvicorn-native TLS) or 'terminated' "
+            "(reverse proxy upstream), or bind to 127.0.0.1 / ::1 / localhost."
+        )
