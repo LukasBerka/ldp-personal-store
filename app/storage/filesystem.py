@@ -7,15 +7,26 @@ fresh instance reconstructs the same state from disk. Disk stays authoritative:
 each write/delete updates the named graph incrementally rather than rebuilding.
 """
 
+import re
 import threading
 from collections.abc import Iterator
 from pathlib import Path
 
-from rdflib import ConjunctiveGraph, Graph, URIRef
+from rdflib import ConjunctiveGraph, Graph, Literal, URIRef
 from rdflib.query import Result
 
 from app.storage.backend import ResourceNotFound, StorageError
 from app.storage.system import assert_public_uri, ensure_system_subtree
+
+_IRI_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+
+def _to_term(value: str) -> URIRef | Literal:
+    # init_bindings values arrive as plain strings; rdflib will not coerce them,
+    # so absolute-IRI-looking values become URIRefs and everything else a Literal.
+    if _IRI_SCHEME.match(value):
+        return URIRef(value)
+    return Literal(value)
 
 
 def _uri_to_rdf_path(uri: str, storage_root: Path, base_uri: str) -> Path:
@@ -122,4 +133,10 @@ class FilesystemBackend:
         raise NotImplementedError
 
     def query(self, sparql: str, init_bindings: dict[str, str] | None = None) -> Result:
-        raise NotImplementedError
+        bindings = None
+        if init_bindings is not None:
+            bindings = {var: _to_term(value) for var, value in init_bindings.items()}
+        # ConjunctiveGraph queries the union of all named graphs, so a plain
+        # `?s ?p ?o` pattern sees every resource without a GRAPH wrapper.
+        with self._lock:
+            return self._graph.query(sparql, initBindings=bindings)
