@@ -13,10 +13,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from rdflib import ConjunctiveGraph, Graph, Literal, URIRef
+from rdflib.namespace import RDF
 from rdflib.query import Result
 
-from app.storage.backend import ResourceNotFound, StorageError
+from app.storage.backend import NotABinaryResource, ResourceNotFound, StorageError
 from app.storage.system import assert_public_uri, ensure_system_subtree
+from app.vocab import DC_format, LDP_NonRDFSource
 
 _IRI_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
@@ -109,7 +111,25 @@ class FilesystemBackend:
             )
 
     def write_binary(self, uri: str, data: bytes, content_type: str) -> None:
-        raise NotImplementedError
+        assert_public_uri(uri, self._base_uri)
+        bin_path = _guard_within_root(
+            _uri_to_bin_path(uri, self._storage_root, self._base_uri), self._storage_root, uri
+        )
+        subject = URIRef(uri)
+        meta = Graph()
+        meta.add((subject, RDF.type, LDP_NonRDFSource))
+        meta.add((subject, DC_format, Literal(content_type)))
+        serialized = meta.serialize(format="turtle")
+        meta_path = Path(f"{bin_path}.meta.ttl")
+        with self._lock:
+            bin_path.parent.mkdir(parents=True, exist_ok=True)
+            # Raw bytes live only on disk; the graph holds the metadata sidecar.
+            bin_path.write_bytes(data)
+            meta_path.write_text(serialized, encoding="utf-8")
+            self._graph.remove_context(self._graph.get_context(subject))
+            self._graph.get_context(subject).parse(
+                data=meta_path.read_text(encoding="utf-8"), format="turtle"
+            )
 
     def delete(self, uri: str) -> None:
         rdf_path = _guard_within_root(
@@ -130,7 +150,18 @@ class FilesystemBackend:
             self._graph.remove_context(self._graph.get_context(URIRef(uri)))
 
     def stream_binary(self, uri: str, chunk_size: int = 65536) -> Iterator[bytes]:
-        raise NotImplementedError
+        bin_path = _guard_within_root(
+            _uri_to_bin_path(uri, self._storage_root, self._base_uri), self._storage_root, uri
+        )
+        if not bin_path.is_file():
+            rdf_path = _uri_to_rdf_path(uri, self._storage_root, self._base_uri)
+            if rdf_path.exists():
+                raise NotABinaryResource(uri)
+            raise ResourceNotFound(uri)
+        # Stream lazily so large files never load fully into memory.
+        with bin_path.open("rb") as f:
+            while chunk := f.read(chunk_size):
+                yield chunk
 
     def query(self, sparql: str, init_bindings: dict[str, str] | None = None) -> Result:
         bindings = None
