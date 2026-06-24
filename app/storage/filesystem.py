@@ -14,8 +14,8 @@ from pathlib import Path
 from rdflib import ConjunctiveGraph, Graph, URIRef
 from rdflib.query import Result
 
-from app.storage.backend import StorageError
-from app.storage.system import ensure_system_subtree
+from app.storage.backend import ResourceNotFound, StorageError
+from app.storage.system import assert_public_uri, ensure_system_subtree
 
 
 def _uri_to_rdf_path(uri: str, storage_root: Path, base_uri: str) -> Path:
@@ -65,16 +65,58 @@ class FilesystemBackend:
                 context.parse(data=path.read_text(encoding="utf-8"), format="turtle")
 
     def read(self, uri: str) -> Graph:
-        raise NotImplementedError
+        path = _guard_within_root(
+            _uri_to_rdf_path(uri, self._storage_root, self._base_uri), self._storage_root, uri
+        )
+        result = Graph()
+        with self._lock:
+            if not path.exists():
+                raise ResourceNotFound(uri)
+            # Copy out of the named-graph context so callers never hold a live
+            # reference into the shared ConjunctiveGraph store.
+            for triple in self._graph.get_context(URIRef(uri)):
+                result.add(triple)
+        return result
 
     def write(self, uri: str, graph: Graph) -> None:
-        raise NotImplementedError
+        assert_public_uri(uri, self._base_uri)
+        self._write_system(uri, graph)
+
+    def _write_system(self, uri: str, graph: Graph) -> None:
+        # Bypasses the public prefix check so server-managed .system/ writes succeed;
+        # public callers reach persistence only through write()/write_binary().
+        path = _guard_within_root(
+            _uri_to_rdf_path(uri, self._storage_root, self._base_uri), self._storage_root, uri
+        )
+        serialized = graph.serialize(format="turtle")
+        with self._lock:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(serialized, encoding="utf-8")
+            self._graph.remove_context(self._graph.get_context(URIRef(uri)))
+            self._graph.get_context(URIRef(uri)).parse(
+                data=path.read_text(encoding="utf-8"), format="turtle"
+            )
 
     def write_binary(self, uri: str, data: bytes, content_type: str) -> None:
         raise NotImplementedError
 
     def delete(self, uri: str) -> None:
-        raise NotImplementedError
+        rdf_path = _guard_within_root(
+            _uri_to_rdf_path(uri, self._storage_root, self._base_uri), self._storage_root, uri
+        )
+        bin_path = _guard_within_root(
+            _uri_to_bin_path(uri, self._storage_root, self._base_uri), self._storage_root, uri
+        )
+        meta_path = Path(f"{bin_path}.meta.ttl")
+        with self._lock:
+            if rdf_path.exists():
+                rdf_path.unlink()
+            elif bin_path.exists():
+                bin_path.unlink()
+                meta_path.unlink(missing_ok=True)
+            else:
+                raise ResourceNotFound(uri)
+            self._graph.remove_context(self._graph.get_context(URIRef(uri)))
 
     def stream_binary(self, uri: str, chunk_size: int = 65536) -> Iterator[bytes]:
         raise NotImplementedError
