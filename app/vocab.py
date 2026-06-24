@@ -38,6 +38,18 @@ LDP_PreferMinimalContainer: URIRef = LDP.PreferMinimalContainer
 
 
 # ---------------------------------------------------------------------------
+# Dublin Core Terms — http://purl.org/dc/terms/
+# ---------------------------------------------------------------------------
+DCTERMS = Namespace("http://purl.org/dc/terms/")
+
+# Predicate recording a non-RDF resource's media type in its metadata sidecar.
+# Item access (not ``DCTERMS.format``) is required because ``format`` collides
+# with ``str.format`` on the Namespace. This is the placeholder content-type
+# term; the HTTP layer may refine it once its serialization needs are settled.
+DC_format: URIRef = DCTERMS["format"]
+
+
+# ---------------------------------------------------------------------------
 # .system namespace — derived from base URI at runtime
 # ---------------------------------------------------------------------------
 
