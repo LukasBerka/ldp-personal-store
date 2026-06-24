@@ -1,0 +1,36 @@
+"""The reserved ``.system/`` subtree and the prefix invariant that guards it.
+
+The pod owner owns every top-level name under the base URI except one: the
+``.system/`` segment is reserved for server-managed state (views, tokens, and
+token policies). Public write operations must never touch it, so the backend
+calls :func:`assert_public_uri` before persisting owner-supplied resources.
+"""
+
+from pathlib import Path
+
+from app.storage.backend import PrefixViolation
+
+SYSTEM_SEGMENT = ".system"
+
+
+def ensure_system_subtree(storage_root: Path) -> None:
+    """Create the reserved ``.system/`` directory tree under *storage_root*.
+
+    Idempotent: existing directories are left untouched.
+    """
+    for subdir in ("views", "tokens", "tokens/policies"):
+        (storage_root / SYSTEM_SEGMENT / subdir).mkdir(parents=True, exist_ok=True)
+
+
+def is_system_uri(uri: str, base_uri: str) -> bool:
+    """Return whether *uri*'s first path segment after *base_uri* is reserved."""
+    return uri.removeprefix(base_uri).split("/")[0] == SYSTEM_SEGMENT
+
+
+def assert_public_uri(uri: str, base_uri: str) -> None:
+    """Reject *uri* when it falls under the reserved ``.system/`` subtree.
+
+    Raises PrefixViolation for any URI the owner is not allowed to write directly.
+    """
+    if is_system_uri(uri, base_uri):
+        raise PrefixViolation(f"URI {uri!r} is under the reserved .system/ subtree")
