@@ -47,6 +47,14 @@ def _path_to_uri(path: Path, storage_root: Path, base_uri: str) -> str:
     return base_uri + segment
 
 
+def _meta_path_to_uri(path: Path, storage_root: Path, base_uri: str) -> str:
+    # A binary sidecar foo.png.meta.ttl describes the binary resource foo.png, so
+    # the whole ".meta.ttl" suffix is stripped; stripping only ".ttl" (as
+    # _path_to_uri does) would leave a stray ".meta" and point at no resource.
+    segment = path.relative_to(storage_root).as_posix().removesuffix(".meta.ttl")
+    return base_uri + segment
+
+
 def _guard_within_root(candidate: Path, storage_root: Path, uri: str) -> Path:
     """Resolve *candidate* and reject any path escaping *storage_root*.
 
@@ -71,9 +79,14 @@ class FilesystemBackend:
         ensure_system_subtree(storage_root)
         with self._lock:
             for path in storage_root.rglob("*.ttl"):
+                # Binary sidecars (foo.png.meta.ttl) carry the binary's RDF
+                # metadata; loading them too lets a restarted backend rebuild a
+                # SPARQL-discoverable graph identical to before restart, not just
+                # the RDF resources. Raw binary bytes stay on disk, never in the graph.
                 if path.name.endswith(".meta.ttl"):
-                    continue
-                uri = _path_to_uri(path, storage_root, base_uri)
+                    uri = _meta_path_to_uri(path, storage_root, base_uri)
+                else:
+                    uri = _path_to_uri(path, storage_root, base_uri)
                 context = self._graph.get_context(URIRef(uri))
                 context.parse(data=path.read_text(encoding="utf-8"), format="turtle")
 
