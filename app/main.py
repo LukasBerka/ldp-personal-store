@@ -4,10 +4,32 @@ from typing import Literal
 
 from fastapi import FastAPI
 from pydantic import BaseModel
+from rdflib import Graph, URIRef
+from rdflib.namespace import RDF
 
 from app import __version__
 from app.config import check_tls_precondition, get_settings
-from app.vocab import make_system_ns
+from app.ldp.router import router as ldp_router
+from app.storage.backend import ResourceNotFound, StorageBackend
+from app.storage.filesystem import FilesystemBackend
+from app.vocab import LDP_BasicContainer, LDP_RDFSource, LDP_Resource, make_system_ns
+
+
+def _init_root_container(backend: StorageBackend, base_uri: str) -> None:
+    """Seed the pod root as an empty Basic Container on first startup.
+
+    The root URI is not under the reserved ``.system/`` subtree, so the public
+    write path accepts it.
+    """
+    try:
+        backend.read(base_uri)
+    except ResourceNotFound:
+        root = URIRef(base_uri)
+        graph = Graph()
+        graph.add((root, RDF.type, LDP_Resource))
+        graph.add((root, RDF.type, LDP_RDFSource))
+        graph.add((root, RDF.type, LDP_BasicContainer))
+        backend.write(base_uri, graph)
 
 
 @asynccontextmanager
@@ -15,14 +37,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     check_tls_precondition(settings)
     app.state.system_ns = make_system_ns(settings.base_uri)
+    backend = FilesystemBackend(storage_root=settings.storage_root, base_uri=settings.base_uri)
+    app.state.backend = backend
+    _init_root_container(backend, settings.base_uri)
     yield
 
 
 app = FastAPI(title="Personal LDP Pod", version=__version__, lifespan=lifespan)
-
-
-class Message(BaseModel):
-    message: str
 
 
 class HealthResponse(BaseModel):
@@ -30,14 +51,12 @@ class HealthResponse(BaseModel):
     version: str
 
 
-@app.get("/")
-def root() -> Message:
-    return Message(message="Hello")
-
-
 @app.get("/health")
 def health() -> HealthResponse:
     return HealthResponse(status="ok", version=__version__)
+
+
+app.include_router(ldp_router)
 
 
 def run() -> None:
