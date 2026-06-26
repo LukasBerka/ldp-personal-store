@@ -128,9 +128,12 @@ def _put_rdf_resource(
     if normalized_ct not in RDF_CONTENT_TYPES:
         raise HTTPException(status_code=415, detail=f"Unsupported media type {normalized_ct!r}")
     try:
-        current_etag: str | None = etag_for_graph(backend.read(uri))
+        read_graph = backend.read(uri)
+        current_etag: str | None = etag_for_graph(read_graph)
+        stored: Graph | None = read_graph
         exists = True
     except ResourceNotFound:
+        stored = None
         current_etag = None
         exists = False
     except StorageError as exc:
@@ -138,6 +141,15 @@ def _put_rdf_resource(
     check_preconditions(if_match, if_none_match, current_etag, exists)
     graph = Graph()
     graph.parse(data=body, format=rdflib_format_for(normalized_ct))
+    stored_is_container = stored is not None and container_kind(stored, uri) is not None
+    if stored_is_container or container_kind(graph, uri) is not None:
+        # ldp:contains is server-managed: discard any client-supplied containment
+        # and restore the containment recorded on the stored container.
+        subject = URIRef(uri)
+        graph.remove((None, LDP_contains, None))
+        if stored is not None:
+            for member in stored.objects(subject, LDP_contains):
+                graph.add((subject, LDP_contains, member))
     try:
         backend.write(uri, graph)
     except StorageError as exc:
