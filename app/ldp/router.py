@@ -8,9 +8,10 @@ the correct execution model for blocking code.
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Header, HTTPException, Response
-from rdflib import Graph
+from rdflib import Graph, URIRef
 
 from app.config import SettingsDep
+from app.ldp.containers import container_kind, mint_member_uri
 from app.ldp.content import (
     ALLOW_RDF,
     RDF_CONTENT_TYPES,
@@ -29,7 +30,7 @@ from app.storage.backend import (
     StorageBackend,
     StorageError,
 )
-from app.vocab import LDP_RDFSource, LDP_Resource
+from app.vocab import LDP_contains, LDP_RDFSource, LDP_Resource
 
 router = APIRouter(tags=["ldp"])
 
@@ -109,6 +110,46 @@ def _put_rdf_resource(
     )
 
 
+def _post_member(
+    backend: StorageBackend,
+    base_uri: str,
+    path: str,
+    body: bytes,
+    content_type: str | None,
+    slug: str | None,
+) -> Response:
+    container_uri = base_uri + path
+    try:
+        container_graph = backend.read(container_uri)
+    except StorageError as exc:
+        raise _http_error(exc) from exc
+    if container_kind(container_graph, container_uri) is None:
+        raise HTTPException(status_code=405, headers={"Allow": ALLOW_RDF})
+    normalized_ct = (content_type or "text/turtle").split(";")[0].strip().lower()
+    if normalized_ct not in RDF_CONTENT_TYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported media type {normalized_ct!r}")
+    member_uri = mint_member_uri(container_uri, slug)
+    member_graph = Graph()
+    member_graph.parse(data=body, format=rdflib_format_for(normalized_ct))
+    # The container read-modify-write below spans two backend calls and is not
+    # atomic at the HTTP level; acceptable for a single-user pod.
+    try:
+        backend.write(member_uri, member_graph)
+        container_graph.add((URIRef(container_uri), LDP_contains, URIRef(member_uri)))
+        backend.write(container_uri, container_graph)
+    except StorageError as exc:
+        raise _http_error(exc) from exc
+    return Response(
+        status_code=201,
+        headers={
+            "Location": member_uri,
+            "ETag": etag_for_graph(member_graph),
+            "Link": link_header([LDP_Resource, LDP_RDFSource]),
+            "Allow": ALLOW_RDF,
+        },
+    )
+
+
 @router.api_route("/", methods=["GET", "HEAD"])
 def get_root(
     backend: BackendDep,
@@ -157,6 +198,29 @@ def put_resource(
     return _put_rdf_resource(
         backend, settings.base_uri, path, body, content_type, if_match, if_none_match
     )
+
+
+@router.post("/")
+def post_root(
+    backend: BackendDep,
+    settings: SettingsDep,
+    body: Annotated[bytes, Body()],
+    content_type: Annotated[str | None, Header()] = None,
+    slug: Annotated[str | None, Header()] = None,
+) -> Response:
+    return _post_member(backend, settings.base_uri, "", body, content_type, slug)
+
+
+@router.post("/{path:path}")
+def post_resource(
+    path: str,
+    backend: BackendDep,
+    settings: SettingsDep,
+    body: Annotated[bytes, Body()],
+    content_type: Annotated[str | None, Header()] = None,
+    slug: Annotated[str | None, Header()] = None,
+) -> Response:
+    return _post_member(backend, settings.base_uri, path, body, content_type, slug)
 
 
 @router.delete("/{path:path}", status_code=204)
