@@ -11,7 +11,12 @@ from fastapi import APIRouter, Body, Header, HTTPException, Response
 from rdflib import Graph, URIRef
 
 from app.config import SettingsDep
-from app.ldp.containers import container_kind, container_link_types, mint_member_uri
+from app.ldp.containers import (
+    container_kind,
+    container_link_types,
+    mint_member_uri,
+    parent_container_uri,
+)
 from app.ldp.content import (
     ALLOW_CONTAINER,
     ALLOW_RDF,
@@ -188,6 +193,24 @@ def _post_member(
     )
 
 
+def _detach_from_parent(backend: StorageBackend, base_uri: str, member_uri: str) -> None:
+    """Drop ``(parent, ldp:contains, member_uri)`` from the deleted member's parent."""
+    parent = parent_container_uri(member_uri, base_uri)
+    if parent == member_uri:
+        return
+    try:
+        parent_graph = backend.read(parent)
+    except ResourceNotFound:
+        return
+    except StorageError as exc:
+        raise _http_error(exc) from exc
+    parent_graph.remove((URIRef(parent), LDP_contains, URIRef(member_uri)))
+    try:
+        backend.write(parent, parent_graph)
+    except StorageError as exc:
+        raise _http_error(exc) from exc
+
+
 @router.api_route("/", methods=["GET", "HEAD"])
 def get_root(
     backend: BackendDep,
@@ -264,10 +287,25 @@ def post_resource(
 @router.delete("/{path:path}", status_code=204)
 def delete_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Response:
     uri = settings.base_uri + path
+    # A binary resource is invisible to read (only its sidecar exists), so a
+    # missing read just means "not an RDF container" — delete still adjudicates 404.
+    try:
+        target: Graph | None = backend.read(uri)
+    except ResourceNotFound:
+        target = None
+    except StorageError as exc:
+        raise _http_error(exc) from exc
+    if (
+        target is not None
+        and container_kind(target, uri) is not None
+        and next(target.objects(URIRef(uri), LDP_contains), None) is not None
+    ):
+        raise HTTPException(status_code=409)
     try:
         backend.delete(uri)
     except StorageError as exc:
         raise _http_error(exc) from exc
+    _detach_from_parent(backend, settings.base_uri, uri)
     return Response(status_code=204)
 
 
