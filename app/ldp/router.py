@@ -11,8 +11,9 @@ from fastapi import APIRouter, Body, Header, HTTPException, Response
 from rdflib import Graph, URIRef
 
 from app.config import SettingsDep
-from app.ldp.containers import container_kind, mint_member_uri
+from app.ldp.containers import container_kind, container_link_types, mint_member_uri
 from app.ldp.content import (
+    ALLOW_CONTAINER,
     ALLOW_RDF,
     RDF_CONTENT_TYPES,
     check_preconditions,
@@ -30,7 +31,14 @@ from app.storage.backend import (
     StorageBackend,
     StorageError,
 )
-from app.vocab import LDP_contains, LDP_RDFSource, LDP_Resource
+from app.vocab import (
+    LDP_contains,
+    LDP_hasMemberRelation,
+    LDP_isMemberOfRelation,
+    LDP_membershipResource,
+    LDP_RDFSource,
+    LDP_Resource,
+)
 
 router = APIRouter(tags=["ldp"])
 
@@ -46,6 +54,30 @@ def _http_error(exc: StorageError) -> HTTPException:
     if isinstance(exc, NotABinaryResource):
         return HTTPException(status_code=409)
     return HTTPException(status_code=500)
+
+
+def _with_direct_membership(graph: Graph, uri: str) -> Graph:
+    """Return a serialization copy of *graph* with Direct membership triples added.
+
+    Membership is derived from the stored ``ldp:contains`` triples plus the
+    container's ``membershipResource`` and member-relation predicate; the result
+    is used only for the response body and is never persisted.
+    """
+    subject = URIRef(uri)
+    membership_resource = graph.value(subject, LDP_membershipResource)
+    if membership_resource is None:
+        return graph
+    has_member = graph.value(subject, LDP_hasMemberRelation)
+    is_member_of = graph.value(subject, LDP_isMemberOfRelation)
+    result = Graph()
+    for triple in graph:
+        result.add(triple)
+    for member in graph.objects(subject, LDP_contains):
+        if has_member is not None:
+            result.add((membership_resource, has_member, member))
+        elif is_member_of is not None:
+            result.add((member, is_member_of, membership_resource))
+    return result
 
 
 def _get_rdf_resource(
@@ -64,10 +96,16 @@ def _get_rdf_resource(
     etag = etag_for_graph(graph)
     if if_none_match is not None and if_none_match in (etag, "*"):
         return Response(status_code=304, headers={"ETag": etag})
+    kind = container_kind(graph, uri)
+    if kind is None:
+        link, allow, body_graph = _RDF_LINK, ALLOW_RDF, graph
+    else:
+        link, allow = link_header(container_link_types(kind)), ALLOW_CONTAINER
+        body_graph = _with_direct_membership(graph, uri) if kind == "direct" else graph
     return Response(
-        content=serialize_graph(graph, fmt),
+        content=serialize_graph(body_graph, fmt),
         media_type=media_type,
-        headers={"ETag": etag, "Link": _RDF_LINK, "Allow": ALLOW_RDF},
+        headers={"ETag": etag, "Link": link, "Allow": allow},
     )
 
 

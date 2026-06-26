@@ -68,7 +68,11 @@ def is_container(graph: Graph, uri: str) -> bool:
     return container_kind(graph, uri) is not None
 
 
-def container_link_types(kind: str) -> list[URIRef]:
-    """Return the LDP ``rdf:type`` list for a container's ``Link`` header."""
+def container_link_types(kind: str) -> list[URIRef | str]:
+    """Return the LDP ``rdf:type`` list for a container's ``Link`` header.
+
+    The element type matches ``link_header``'s parameter so the result can be
+    passed straight through without a list-invariance type error.
+    """
     specific = LDP_BasicContainer if kind == "basic" else LDP_DirectContainer
     return [LDP_Resource, LDP_RDFSource, LDP_Container, specific]
