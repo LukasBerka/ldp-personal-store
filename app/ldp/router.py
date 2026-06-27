@@ -25,6 +25,7 @@ from app.ldp.content import (
     RDF_CONTENT_TYPES,
     binary_content_type,
     check_preconditions,
+    etag_for_binary,
     etag_for_graph,
     etag_for_stream,
     link_header,
@@ -168,14 +169,11 @@ def _put_rdf_resource(
     base_uri: str,
     path: str,
     body: bytes,
-    content_type: str | None,
+    content_type: str,
     if_match: str | None,
     if_none_match: str | None,
 ) -> Response:
     uri = base_uri + path
-    normalized_ct = (content_type or "text/turtle").split(";")[0].strip().lower()
-    if normalized_ct not in RDF_CONTENT_TYPES:
-        raise HTTPException(status_code=415, detail=f"Unsupported media type {normalized_ct!r}")
     try:
         read_graph = backend.read(uri)
         current_etag: str | None = etag_for_graph(read_graph)
@@ -189,7 +187,7 @@ def _put_rdf_resource(
         raise _http_error(exc) from exc
     check_preconditions(if_match, if_none_match, current_etag, exists)
     graph = Graph()
-    graph.parse(data=body, format=rdflib_format_for(normalized_ct))
+    graph.parse(data=body, format=rdflib_format_for(content_type))
     stored_is_container = stored is not None and container_kind(stored, uri) is not None
     if stored_is_container or container_kind(graph, uri) is not None:
         # ldp:contains is server-managed: discard any client-supplied containment
@@ -211,6 +209,59 @@ def _put_rdf_resource(
             "Link": _RDF_LINK,
             "Allow": ALLOW_RDF,
         },
+    )
+
+
+def _put_binary_resource(
+    backend: StorageBackend,
+    base_uri: str,
+    path: str,
+    body: bytes,
+    content_type: str,
+    if_match: str | None,
+    if_none_match: str | None,
+) -> Response:
+    uri = base_uri + path
+    try:
+        current_etag: str | None = etag_for_stream(backend.stream_binary(uri))
+        exists = True
+    except (NotABinaryResource, ResourceNotFound):
+        current_etag = None
+        exists = False
+    check_preconditions(if_match, if_none_match, current_etag, exists)
+    try:
+        backend.write_binary(uri, body, content_type)
+    except StorageError as exc:
+        raise _http_error(exc) from exc
+    return Response(
+        status_code=200 if exists else 201,
+        headers={
+            "ETag": etag_for_binary(body),
+            "Location": uri,
+            "Link": _BINARY_LINK,
+            "Allow": ALLOW_BINARY,
+        },
+    )
+
+
+def _put_resource(
+    backend: StorageBackend,
+    base_uri: str,
+    path: str,
+    body: bytes,
+    content_type: str | None,
+    if_match: str | None,
+    if_none_match: str | None,
+) -> Response:
+    # A missing Content-Type is treated as opaque bytes per HTTP's octet-stream
+    # default; only the three RDF media types take the RDF write path.
+    normalized_ct = (content_type or "application/octet-stream").split(";")[0].strip().lower()
+    if normalized_ct in RDF_CONTENT_TYPES:
+        return _put_rdf_resource(
+            backend, base_uri, path, body, normalized_ct, if_match, if_none_match
+        )
+    return _put_binary_resource(
+        backend, base_uri, path, body, normalized_ct, if_match, if_none_match
     )
 
 
@@ -302,7 +353,7 @@ def put_root(
     if_match: Annotated[str | None, Header()] = None,
     if_none_match: Annotated[str | None, Header()] = None,
 ) -> Response:
-    return _put_rdf_resource(
+    return _put_resource(
         backend, settings.base_uri, "", body, content_type, if_match, if_none_match
     )
 
@@ -317,7 +368,7 @@ def put_resource(
     if_match: Annotated[str | None, Header()] = None,
     if_none_match: Annotated[str | None, Header()] = None,
 ) -> Response:
-    return _put_rdf_resource(
+    return _put_resource(
         backend, settings.base_uri, path, body, content_type, if_match, if_none_match
     )
 
