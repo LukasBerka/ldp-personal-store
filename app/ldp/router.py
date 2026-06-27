@@ -8,6 +8,7 @@ the correct execution model for blocking code.
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Header, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from rdflib import Graph, URIRef
 
 from app.config import SettingsDep
@@ -18,11 +19,14 @@ from app.ldp.containers import (
     parent_container_uri,
 )
 from app.ldp.content import (
+    ALLOW_BINARY,
     ALLOW_CONTAINER,
     ALLOW_RDF,
     RDF_CONTENT_TYPES,
+    binary_content_type,
     check_preconditions,
     etag_for_graph,
+    etag_for_stream,
     link_header,
     negotiate,
     rdflib_format_for,
@@ -41,6 +45,7 @@ from app.vocab import (
     LDP_hasMemberRelation,
     LDP_isMemberOfRelation,
     LDP_membershipResource,
+    LDP_NonRDFSource,
     LDP_RDFSource,
     LDP_Resource,
 )
@@ -48,6 +53,7 @@ from app.vocab import (
 router = APIRouter(tags=["ldp"])
 
 _RDF_LINK = link_header([LDP_Resource, LDP_RDFSource])
+_BINARY_LINK = link_header([LDP_Resource, LDP_NonRDFSource])
 
 
 def _http_error(exc: StorageError) -> HTTPException:
@@ -85,6 +91,36 @@ def _with_direct_membership(graph: Graph, uri: str) -> Graph:
     return result
 
 
+def _get_binary_resource(
+    backend: StorageBackend,
+    uri: str,
+    if_none_match: str | None,
+) -> Response | None:
+    """Stream the binary resource at *uri*, or return None when it is not binary.
+
+    ``stream_binary`` is the only reliable existence probe for a binary: ``read``
+    looks for a ``{uri}.ttl`` that binaries never have. Because the backend yields
+    bytes lazily, the generator's existence checks fire only once iterated, so the
+    ETag pass over the stream doubles as the probe — ``NotABinaryResource`` means an
+    RDF resource lives here (the caller falls through to RDF) and ``ResourceNotFound``
+    means nothing exists. Hashing the file on every read is acceptable for a
+    personal pod.
+    """
+    try:
+        etag = etag_for_stream(backend.stream_binary(uri))
+    except NotABinaryResource:
+        return None
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404) from exc
+    if if_none_match is not None and if_none_match in (etag, "*"):
+        return Response(status_code=304, headers={"ETag": etag})
+    return StreamingResponse(
+        backend.stream_binary(uri),
+        media_type=binary_content_type(backend, uri),
+        headers={"ETag": etag, "Link": _BINARY_LINK, "Allow": ALLOW_BINARY},
+    )
+
+
 def _get_rdf_resource(
     backend: StorageBackend,
     base_uri: str,
@@ -112,6 +148,19 @@ def _get_rdf_resource(
         media_type=media_type,
         headers={"ETag": etag, "Link": link, "Allow": allow},
     )
+
+
+def _get_resource(
+    backend: StorageBackend,
+    base_uri: str,
+    path: str,
+    accept: str | None,
+    if_none_match: str | None,
+) -> Response:
+    binary = _get_binary_resource(backend, base_uri + path, if_none_match)
+    if binary is not None:
+        return binary
+    return _get_rdf_resource(backend, base_uri, path, accept, if_none_match)
 
 
 def _put_rdf_resource(
@@ -230,7 +279,7 @@ def get_root(
     accept: Annotated[str | None, Header()] = None,
     if_none_match: Annotated[str | None, Header()] = None,
 ) -> Response:
-    return _get_rdf_resource(backend, settings.base_uri, "", accept, if_none_match)
+    return _get_resource(backend, settings.base_uri, "", accept, if_none_match)
 
 
 @router.api_route("/{path:path}", methods=["GET", "HEAD"])
@@ -241,7 +290,7 @@ def get_resource(
     accept: Annotated[str | None, Header()] = None,
     if_none_match: Annotated[str | None, Header()] = None,
 ) -> Response:
-    return _get_rdf_resource(backend, settings.base_uri, path, accept, if_none_match)
+    return _get_resource(backend, settings.base_uri, path, accept, if_none_match)
 
 
 @router.put("/")
