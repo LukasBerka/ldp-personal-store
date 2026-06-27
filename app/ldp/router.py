@@ -280,28 +280,26 @@ def _post_member(
         raise _http_error(exc) from exc
     if container_kind(container_graph, container_uri) is None:
         raise HTTPException(status_code=405, headers={"Allow": ALLOW_RDF})
-    normalized_ct = (content_type or "text/turtle").split(";")[0].strip().lower()
-    if normalized_ct not in RDF_CONTENT_TYPES:
-        raise HTTPException(status_code=415, detail=f"Unsupported media type {normalized_ct!r}")
+    normalized_ct = (content_type or "application/octet-stream").split(";")[0].strip().lower()
     member_uri = mint_member_uri(container_uri, slug)
-    member_graph = Graph()
-    member_graph.parse(data=body, format=rdflib_format_for(normalized_ct))
     # The container read-modify-write below spans two backend calls and is not
     # atomic at the HTTP level; acceptable for a single-user pod.
     try:
-        backend.write(member_uri, member_graph)
+        if normalized_ct in RDF_CONTENT_TYPES:
+            member_graph = Graph()
+            member_graph.parse(data=body, format=rdflib_format_for(normalized_ct))
+            backend.write(member_uri, member_graph)
+            etag, link, allow = etag_for_graph(member_graph), _RDF_LINK, ALLOW_RDF
+        else:
+            backend.write_binary(member_uri, body, normalized_ct)
+            etag, link, allow = etag_for_binary(body), _BINARY_LINK, ALLOW_BINARY
         container_graph.add((URIRef(container_uri), LDP_contains, URIRef(member_uri)))
         backend.write(container_uri, container_graph)
     except StorageError as exc:
         raise _http_error(exc) from exc
     return Response(
         status_code=201,
-        headers={
-            "Location": member_uri,
-            "ETag": etag_for_graph(member_graph),
-            "Link": link_header([LDP_Resource, LDP_RDFSource]),
-            "Allow": ALLOW_RDF,
-        },
+        headers={"Location": member_uri, "ETag": etag, "Link": link, "Allow": allow},
     )
 
 
