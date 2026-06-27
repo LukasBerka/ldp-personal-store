@@ -10,6 +10,7 @@ from rdflib.namespace import RDF
 from app import __version__
 from app.config import check_tls_precondition, get_settings
 from app.ldp.router import router as ldp_router
+from app.sparql.router import router as sparql_router
 from app.storage.backend import ResourceNotFound, StorageBackend
 from app.storage.filesystem import FilesystemBackend
 from app.vocab import LDP_BasicContainer, LDP_RDFSource, LDP_Resource, make_system_ns
@@ -56,6 +57,7 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok", version=__version__)
 
 
+app.include_router(sparql_router)
 app.include_router(ldp_router)
 
 
