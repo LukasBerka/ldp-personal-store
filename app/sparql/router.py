@@ -5,9 +5,10 @@ FastAPI runs sync path operations in a threadpool, which is the correct executio
 model for blocking code.
 """
 
+import urllib.parse
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Header, HTTPException, Query, Response
 from pyparsing.exceptions import ParseException
 
 from app.ldp.deps import BackendDep
@@ -67,3 +68,22 @@ def query_get(
     accept: Annotated[str | None, Header()] = None,
 ) -> Response:
     return _run_query(backend, query or "", accept)
+
+
+@router.post("")
+def query_post(
+    backend: BackendDep,
+    body: Annotated[bytes, Body()],
+    content_type: Annotated[str | None, Header()] = None,
+    accept: Annotated[str | None, Header()] = None,
+) -> Response:
+    normalized_ct = (content_type or "").split(";")[0].strip().lower()
+    if normalized_ct == "application/sparql-update":
+        raise HTTPException(status_code=405)
+    if normalized_ct == "application/sparql-query":
+        sparql = body.decode("utf-8")
+    elif normalized_ct == "application/x-www-form-urlencoded":
+        sparql = urllib.parse.parse_qs(body.decode("utf-8")).get("query", [""])[0]
+    else:
+        raise HTTPException(status_code=415)
+    return _run_query(backend, sparql, accept)
