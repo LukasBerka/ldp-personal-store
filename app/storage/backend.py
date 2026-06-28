@@ -76,3 +76,32 @@ class StorageBackend(Protocol):
         serialization is the caller's responsibility.
         """
         ...
+
+    def write_system(self, uri: str, graph: Graph) -> None:
+        """Persist *graph* as the resource at *uri* WITHOUT the public prefix guard.
+
+        The server-managed counterpart to write(): it accepts .system/ URIs so the
+        token layer can store its records. Never expose this to owner-supplied input;
+        public writes must go through write(), which rejects the .system/ subtree.
+        """
+        ...
+
+    def delete_system(self, uri: str) -> None:
+        """Remove the server-managed resource at *uri* under .system/.
+
+        The internal revocation path: unlike delete(), it applies no prefix guard,
+        so it can remove .system/ records the public API must never touch.
+
+        Raises ResourceNotFound if no resource exists at *uri*.
+        """
+        ...
+
+    def update_enforcement(self, uri: str, count: int, last_used_at: str) -> None:
+        """Atomically replace only the enforcement counter and last-used timestamp.
+
+        Overwrites pod:enforcementCount with *count* and pod:lastUsedAt with
+        *last_used_at* on the token record at *uri*, leaving every other triple
+        intact. The read-modify-write runs under a single lock acquisition so no
+        concurrent request can interleave on the same record.
+        """
+        ...
