@@ -50,6 +50,27 @@ DC_format: URIRef = DCTERMS["format"]
 
 
 # ---------------------------------------------------------------------------
+# Personal Pod vocabulary — urn:pod:vocab:
+# A URN keeps the token-record vocabulary self-contained; no resolvable URI is
+# implied. This identifier is stable across restarts and is never derived from
+# base_uri — the vocab terms are not runtime-configurable.
+# ---------------------------------------------------------------------------
+POD = Namespace("urn:pod:vocab:")
+
+# Token record classes
+POD_Token: URIRef = POD.Token  # common supertype
+POD_ConsumerToken: URIRef = POD.ConsumerToken  # consumer-facing bearer token
+POD_AdminToken: URIRef = POD.AdminToken  # engine-to-storage administrative token
+
+# Token record properties
+POD_tokenHash: URIRef = POD.tokenHash  # xsd:string SHA-256 hex digest
+POD_linkedView: URIRef = POD.linkedView  # URIRef to .system/views/{id}
+POD_policyRef: URIRef = POD.policyRef  # URIRef to .system/tokens/policies/{id}
+POD_enforcementCount: URIRef = POD.enforcementCount  # xsd:integer, bumped per delivery
+POD_lastUsedAt: URIRef = POD.lastUsedAt  # xsd:dateTime, updated per delivery
+
+
+# ---------------------------------------------------------------------------
 # .system namespace — derived from base URI at runtime
 # ---------------------------------------------------------------------------
 
