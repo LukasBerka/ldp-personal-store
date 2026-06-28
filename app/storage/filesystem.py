@@ -13,12 +13,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from rdflib import ConjunctiveGraph, Graph, Literal, URIRef
-from rdflib.namespace import RDF
+from rdflib.namespace import RDF, XSD
 from rdflib.query import Result
 
 from app.storage.backend import NotABinaryResource, ResourceNotFound, StorageError
 from app.storage.system import assert_public_uri, ensure_system_subtree
-from app.vocab import DC_format, LDP_NonRDFSource
+from app.vocab import DC_format, LDP_NonRDFSource, POD_enforcementCount, POD_lastUsedAt
 
 _IRI_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
@@ -106,9 +106,9 @@ class FilesystemBackend:
 
     def write(self, uri: str, graph: Graph) -> None:
         assert_public_uri(uri, self._base_uri)
-        self._write_system(uri, graph)
+        self.write_system(uri, graph)
 
-    def _write_system(self, uri: str, graph: Graph) -> None:
+    def write_system(self, uri: str, graph: Graph) -> None:
         # Bypasses the public prefix check so server-managed .system/ writes succeed;
         # public callers reach persistence only through write()/write_binary().
         path = _guard_within_root(
@@ -145,6 +145,14 @@ class FilesystemBackend:
             )
 
     def delete(self, uri: str) -> None:
+        # Guard first: a .system/ URI must raise before any path resolution or
+        # disk mutation, so public LDP DELETE can never remove server-managed records.
+        assert_public_uri(uri, self._base_uri)
+        self.delete_system(uri)
+
+    def delete_system(self, uri: str) -> None:
+        # No prefix guard: the internal revocation path removes .system/ records
+        # that delete() refuses to touch.
         rdf_path = _guard_within_root(
             _uri_to_rdf_path(uri, self._storage_root, self._base_uri), self._storage_root, uri
         )
@@ -161,6 +169,22 @@ class FilesystemBackend:
             else:
                 raise ResourceNotFound(uri)
             self._graph.remove_context(self._graph.get_context(URIRef(uri)))
+
+    def update_enforcement(self, uri: str, count: int, last_used_at: str) -> None:
+        subject = URIRef(uri)
+        with self._lock:
+            # Copy the record's named graph, then rewrite only the two mutable
+            # fields — every other triple (e.g. the token hash) is carried through
+            # untouched. write_system re-acquires _lock, which the reentrant RLock
+            # permits, so the whole read-modify-write stays a single atomic section.
+            graph = Graph()
+            for triple in self._graph.get_context(subject):
+                graph.add(triple)
+            graph.remove((subject, POD_enforcementCount, None))
+            graph.remove((subject, POD_lastUsedAt, None))
+            graph.add((subject, POD_enforcementCount, Literal(count, datatype=XSD.integer)))
+            graph.add((subject, POD_lastUsedAt, Literal(last_used_at, datatype=XSD.dateTime)))
+            self.write_system(uri, graph)
 
     def stream_binary(self, uri: str, chunk_size: int = 65536) -> Iterator[bytes]:
         bin_path = _guard_within_root(
