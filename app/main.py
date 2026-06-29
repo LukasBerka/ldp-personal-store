@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -8,12 +9,16 @@ from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
 from app import __version__
+from app.auth.router import router as system_router
+from app.auth.tokens import bootstrap_admin_token
 from app.config import check_tls_precondition, get_settings
 from app.ldp.router import router as ldp_router
 from app.sparql.router import router as sparql_router
 from app.storage.backend import ResourceNotFound, StorageBackend
 from app.storage.filesystem import FilesystemBackend
 from app.vocab import LDP_BasicContainer, LDP_RDFSource, LDP_Resource, make_system_ns
+
+logger = logging.getLogger(__name__)
 
 
 def _init_root_container(backend: StorageBackend, base_uri: str) -> None:
@@ -41,6 +46,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     backend = FilesystemBackend(storage_root=settings.storage_root, base_uri=settings.base_uri)
     app.state.backend = backend
     _init_root_container(backend, settings.base_uri)
+    plaintext = bootstrap_admin_token(
+        backend, app.state.system_ns, admin_token=settings.admin_token
+    )
+    if plaintext is not None:
+        logger.warning("Admin token (capture now, not stored): %s", plaintext)
     yield
 
 
@@ -58,6 +68,9 @@ def health() -> HealthResponse:
 
 
 app.include_router(sparql_router)
+# The .system/ router must precede the LDP catch-all so its admin-gated GET/DELETE
+# match before the public /{path:path} handlers can reach a system resource.
+app.include_router(system_router)
 app.include_router(ldp_router)
 
 
