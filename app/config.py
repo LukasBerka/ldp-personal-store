@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # "terminated" — a trusted reverse proxy terminates TLS upstream (trust the deployment)
     tls_mode: Literal["off", "required", "terminated"] = "off"
 
+    # Optional PLAINTEXT admin token used to deterministically seed the bootstrap
+    # hash for automated deployments and tests. It is never persisted in plaintext —
+    # only its SHA-256 hash is stored. Left unset, the bootstrap generates a random
+    # admin token and logs it once instead.
+    admin_token: str | None = None
+
     @field_validator("base_uri")
     @classmethod
     def _ensure_trailing_slash(cls, v: str) -> str:
