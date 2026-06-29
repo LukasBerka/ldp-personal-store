@@ -48,6 +48,11 @@ DCTERMS = Namespace("http://purl.org/dc/terms/")
 # term; the HTTP layer may refine it once its serialization needs are settled.
 DC_format: URIRef = DCTERMS["format"]
 
+# Human-readable name and description of a view resource. Attribute access is
+# safe here (unlike ``format``, neither collides with a Namespace built-in).
+DC_title: URIRef = DCTERMS.title
+DC_description: URIRef = DCTERMS.description
+
 
 # ---------------------------------------------------------------------------
 # Personal Pod vocabulary — urn:pod:vocab:
@@ -68,6 +73,14 @@ POD_linkedView: URIRef = POD.linkedView  # URIRef to .system/views/{id}
 POD_policyRef: URIRef = POD.policyRef  # URIRef to .system/tokens/policies/{id}
 POD_enforcementCount: URIRef = POD.enforcementCount  # xsd:integer, bumped per delivery
 POD_lastUsedAt: URIRef = POD.lastUsedAt  # xsd:dateTime, updated per delivery
+
+# View definition terms
+POD_View: URIRef = POD.View  # rdf:type marker for a view resource
+POD_constructTemplate: URIRef = POD.constructTemplate  # xsd:string SPARQL CONSTRUCT template
+POD_contentTypeHint: URIRef = POD.contentTypeHint  # xsd:string suggested response media type
+POD_parameter: URIRef = POD.parameter  # view -> parameter blank node
+POD_paramName: URIRef = POD.paramName  # xsd:string SPARQL variable name (no leading '?')
+POD_paramType: URIRef = POD.paramType  # xsd:string: 'str' | 'int' | 'iri'
 
 
 # ---------------------------------------------------------------------------
