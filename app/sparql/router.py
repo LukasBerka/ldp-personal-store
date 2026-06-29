@@ -8,13 +8,16 @@ model for blocking code.
 import urllib.parse
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Response
 from pyparsing.exceptions import ParseException
 
+from app.auth.deps import get_admin_token
 from app.ldp.deps import BackendDep
 from app.storage.backend import StorageBackend
 
-router = APIRouter(prefix="/sparql", tags=["sparql"])
+# The whole endpoint is the engine->storage boundary: SPARQL has no per-query URI
+# scope, so a valid admin token is required for every query.
+router = APIRouter(prefix="/sparql", tags=["sparql"], dependencies=[Depends(get_admin_token)])
 
 _RESULTS_DEFAULT = "application/sparql-results+json"
 _RESULTS_FORMATS: dict[str, str] = {
