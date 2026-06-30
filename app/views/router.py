@@ -9,16 +9,19 @@ resolution while a GET of a view still falls through to the system Turtle reader
 """
 
 import secrets
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from app.auth.deps import get_admin_token
 from app.ldp.containers import _sanitize_slug
+from app.ldp.deps import BackendDep
+from app.storage.backend import StorageBackend
 from app.views.model import (
     ParamDecl,
     check_params_against_template,
+    to_view_graph,
     validate_construct_template,
 )
 
@@ -58,3 +61,32 @@ def _mint_view_id(slug: str | None) -> str:
         if sanitized:
             return sanitized
     return secrets.token_urlsafe(8)
+
+
+def _build_and_store(backend: StorageBackend, view_uri: str, body: ViewCreateRequest) -> None:
+    decls = [ParamDecl(name=p.name, type=p.type) for p in body.params]
+    _validate_or_422(body.construct_template, decls)
+    graph = to_view_graph(
+        view_uri,
+        body.title,
+        body.description,
+        body.construct_template,
+        body.content_type_hint,
+        decls,
+    )
+    backend.write_system(view_uri, graph)
+
+
+@router.post("", status_code=201)
+def create_view(
+    request: Request,
+    backend: BackendDep,
+    body: ViewCreateRequest,
+    response: Response,
+    slug: Annotated[str | None, Header()] = None,
+) -> ViewCreateResponse:
+    view_id = _mint_view_id(slug)
+    view_uri = str(request.app.state.system_ns) + "views/" + view_id
+    _build_and_store(backend, view_uri, body)
+    response.headers["Location"] = view_uri
+    return ViewCreateResponse(view_uri=view_uri)
