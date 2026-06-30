@@ -18,7 +18,22 @@ from typing import Literal
 
 from pydantic import BaseModel
 from pyparsing.exceptions import ParseException
+from rdflib import BNode, Graph, URIRef
+from rdflib import Literal as RDFLiteral
+from rdflib.namespace import RDF, XSD
 from rdflib.plugins.sparql.parser import parseQuery
+from rdflib.term import Node
+
+from app.vocab import (
+    DC_description,
+    DC_title,
+    POD_constructTemplate,
+    POD_contentTypeHint,
+    POD_parameter,
+    POD_paramName,
+    POD_paramType,
+    POD_View,
+)
 
 ParamTypeName = Literal["str", "int", "iri"]
 
@@ -63,3 +78,64 @@ def check_params_against_template(template: str, decls: list[ParamDecl]) -> None
     for decl in decls:
         if decl.name not in template_vars:
             raise ValueError(f"Declared parameter {decl.name!r} does not appear in the template")
+
+
+def _value_str(graph: Graph, subject: Node, predicate: URIRef) -> str:
+    value = graph.value(subject, predicate)
+    return str(value) if value is not None else ""
+
+
+def to_view_graph(
+    uri: str,
+    title: str,
+    description: str,
+    template: str,
+    ct_hint: str,
+    params: list[ParamDecl],
+) -> Graph:
+    """Serialize a view definition into an rdflib Graph ready for ``write_system``.
+
+    Each parameter becomes a fresh blank node; blank-node labels are never
+    referenced externally, so their instability across a serialize/parse cycle is
+    irrelevant (``parse_view_record`` recovers them by predicate traversal).
+    """
+    graph = Graph()
+    subject = URIRef(uri)
+    graph.add((subject, RDF.type, POD_View))
+    graph.add((subject, DC_title, RDFLiteral(title, datatype=XSD.string)))
+    graph.add((subject, DC_description, RDFLiteral(description, datatype=XSD.string)))
+    graph.add((subject, POD_constructTemplate, RDFLiteral(template, datatype=XSD.string)))
+    graph.add((subject, POD_contentTypeHint, RDFLiteral(ct_hint, datatype=XSD.string)))
+    for param in params:
+        pnode = BNode()
+        graph.add((subject, POD_parameter, pnode))
+        graph.add((pnode, POD_paramName, RDFLiteral(param.name, datatype=XSD.string)))
+        graph.add((pnode, POD_paramType, RDFLiteral(param.type, datatype=XSD.string)))
+    return graph
+
+
+def parse_view_record(graph: Graph, uri: str) -> ViewRecord:
+    """Reconstruct a ViewRecord from its stored RDF triples.
+
+    Parameters are gathered by traversing ``POD_parameter`` predicates rather than
+    by blank-node identity, so the record survives a Turtle serialize/parse cycle.
+    """
+    subject = URIRef(uri)
+    params: list[ParamDecl] = []
+    for pnode in graph.objects(subject, POD_parameter):
+        params.append(
+            ParamDecl.model_validate(
+                {
+                    "name": _value_str(graph, pnode, POD_paramName),
+                    "type": _value_str(graph, pnode, POD_paramType),
+                }
+            )
+        )
+    return ViewRecord(
+        uri=uri,
+        title=_value_str(graph, subject, DC_title),
+        description=_value_str(graph, subject, DC_description),
+        construct_template=_value_str(graph, subject, POD_constructTemplate),
+        content_type_hint=_value_str(graph, subject, POD_contentTypeHint),
+        params=params,
+    )
