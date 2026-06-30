@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from app.auth.deps import get_admin_token
 from app.ldp.containers import _sanitize_slug
 from app.ldp.deps import BackendDep
-from app.storage.backend import StorageBackend
+from app.storage.backend import ResourceNotFound, StorageBackend
 from app.views.model import (
     ParamDecl,
     check_params_against_template,
@@ -90,3 +90,25 @@ def create_view(
     _build_and_store(backend, view_uri, body)
     response.headers["Location"] = view_uri
     return ViewCreateResponse(view_uri=view_uri)
+
+
+@router.put("/{view_id}")
+def replace_view(
+    view_id: str,
+    request: Request,
+    backend: BackendDep,
+    body: ViewCreateRequest,
+) -> ViewCreateResponse:
+    view_uri = str(request.app.state.system_ns) + "views/" + view_id
+    _build_and_store(backend, view_uri, body)
+    return ViewCreateResponse(view_uri=view_uri)
+
+
+@router.delete("/{view_id}", status_code=204)
+def delete_view(view_id: str, request: Request, backend: BackendDep) -> Response:
+    view_uri = str(request.app.state.system_ns) + "views/" + view_id
+    try:
+        backend.delete_system(view_uri)
+    except ResourceNotFound as exc:
+        raise HTTPException(status_code=404) from exc
+    return Response(status_code=204)
