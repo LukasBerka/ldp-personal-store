@@ -16,6 +16,7 @@ from app.ldp.router import router as ldp_router
 from app.sparql.router import router as sparql_router
 from app.storage.backend import ResourceNotFound, StorageBackend
 from app.storage.filesystem import FilesystemBackend
+from app.views.router import router as views_router
 from app.vocab import LDP_BasicContainer, LDP_RDFSource, LDP_Resource, make_system_ns
 
 logger = logging.getLogger(__name__)
@@ -68,8 +69,11 @@ def health() -> HealthResponse:
 
 
 app.include_router(sparql_router)
-# The .system/ router must precede the LDP catch-all so its admin-gated GET/DELETE
-# match before the public /{path:path} handlers can reach a system resource.
+# The more-specific /.system/views router must precede the /.system catch-all so its
+# POST/PUT/DELETE win route resolution before the system router's GET/DELETE
+# /{path:path} handlers; both precede the LDP catch-all so admin-gated system paths
+# are adjudicated before the public /{path:path} handlers reach a reserved resource.
+app.include_router(views_router)
 app.include_router(system_router)
 app.include_router(ldp_router)
 
