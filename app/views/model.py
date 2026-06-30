@@ -16,7 +16,7 @@ str(?n))``.
 import re
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from pyparsing.exceptions import ParseException
 from rdflib import BNode, Graph, URIRef
 from rdflib import Literal as RDFLiteral
@@ -139,3 +139,32 @@ def parse_view_record(graph: Graph, uri: str) -> ViewRecord:
         content_type_hint=_value_str(graph, subject, POD_contentTypeHint),
         params=params,
     )
+
+
+_ABS_IRI = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:.+")
+_INT_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
+
+
+def bind_params(decls: list[ParamDecl], raw: dict[str, str]) -> dict[str, str]:
+    """Validate *raw* query-string values against *decls*; return initBindings-ready dict.
+
+    The returned mapping is passed to ``backend.query(template, init_bindings=...)``
+    as rdflib ``initBindings``, where each value is substituted into the query
+    algebra as a fixed RDF term. Values are NEVER string-interpolated into the
+    template — that is the injection-safety contract this function guarantees.
+    Undeclared extra keys in *raw* are ignored; only declared params are bound.
+    """
+    bound: dict[str, str] = {}
+    for decl in decls:
+        if decl.name not in raw:
+            raise ValueError(f"Missing required parameter: {decl.name!r}")
+        value = raw[decl.name]
+        if decl.type == "int":
+            try:
+                _INT_ADAPTER.validate_python(value)
+            except ValidationError as exc:
+                raise ValueError(f"Parameter {decl.name!r} must be an integer") from exc
+        elif decl.type == "iri" and not _ABS_IRI.match(value):
+            raise ValueError(f"Parameter {decl.name!r} must be an absolute IRI, got {value!r}")
+        bound[decl.name] = value
+    return bound
