@@ -51,6 +51,7 @@ class TokenRecord:
     token_uri: str
     token_type: str
     linked_view_uri: str | None
+    policy_ref: str | None
     enforcement_count: int
 
 
@@ -161,10 +162,12 @@ def validate_token(
     record = backend.read(token_uri)
     count = record.value(subject, POD_enforcementCount)
     view = record.value(subject, POD_linkedView)
+    policy = record.value(subject, POD_policyRef)
     return TokenRecord(
         token_uri=token_uri,
         token_type=str(required_type),
         linked_view_uri=str(view) if view is not None else None,
+        policy_ref=str(policy) if policy is not None else None,
         enforcement_count=int(str(count)) if count is not None else 0,
     )
 
