@@ -82,6 +82,16 @@ POD_parameter: URIRef = POD.parameter  # view -> parameter blank node
 POD_paramName: URIRef = POD.paramName  # xsd:string SPARQL variable name (no leading '?')
 POD_paramType: URIRef = POD.paramType  # xsd:string: 'str' | 'int' | 'iri'
 
+# Access-policy terms
+POD_Policy: URIRef = POD.Policy  # rdf:type marker on a policy resource
+POD_expiresAt: URIRef = POD.expiresAt  # xsd:dateTime; grant invalid once now is past this instant
+POD_validFrom: URIRef = POD.validFrom  # xsd:dateTime; inclusive lower bound of validity window
+POD_validUntil: URIRef = POD.validUntil  # xsd:dateTime; inclusive upper bound of validity window
+POD_maxRetrievals: URIRef = POD.maxRetrievals  # xsd:integer; per-grant delivery ceiling
+POD_minInterval: URIRef = POD.minInterval  # xsd:integer seconds; min gap between grant deliveries
+POD_maxViewRetrievals: URIRef = POD.maxViewRetrievals  # xsd:integer; per-view delivery ceiling
+POD_viewRetrievalCount: URIRef = POD.viewRetrievalCount  # xsd:integer; mutable per-view count
+
 
 # ---------------------------------------------------------------------------
 # .system namespace — derived from base URI at runtime
