@@ -16,8 +16,15 @@ from app.ldp.router import router as ldp_router
 from app.sparql.router import router as sparql_router
 from app.storage.backend import ResourceNotFound, StorageBackend
 from app.storage.filesystem import FilesystemBackend
+from app.views.engine import router as engine_router
 from app.views.router import router as views_router
-from app.vocab import LDP_BasicContainer, LDP_RDFSource, LDP_Resource, make_system_ns
+from app.vocab import (
+    LDP_BasicContainer,
+    LDP_RDFSource,
+    LDP_Resource,
+    make_engine_ns,
+    make_system_ns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     check_tls_precondition(settings)
     app.state.system_ns = make_system_ns(settings.base_uri)
+    app.state.engine_ns = make_engine_ns(settings.base_uri)
     backend = FilesystemBackend(storage_root=settings.storage_root, base_uri=settings.base_uri)
     app.state.backend = backend
     _init_root_container(backend, settings.base_uri)
@@ -75,6 +83,9 @@ app.include_router(sparql_router)
 # are adjudicated before the public /{path:path} handlers reach a reserved resource.
 app.include_router(views_router)
 app.include_router(system_router)
+# The consumer engine mounts before the LDP catch-all so /.engine/ requests are
+# adjudicated here instead of being swallowed by the public /{path:path} handlers.
+app.include_router(engine_router)
 app.include_router(ldp_router)
 
 

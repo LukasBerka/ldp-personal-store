@@ -97,3 +97,14 @@ def make_system_ns(base_uri: str) -> Namespace:
     and shared with later phases (tokens, views, policies all live under .system/).
     """
     return Namespace(base_uri.rstrip("/") + "/.system/")
+
+
+def make_engine_ns(base_uri: str) -> Namespace:
+    """Return the .engine/ sub-namespace anchored at the pod base URI.
+
+    Example: base_uri="http://localhost:8000/" -> "http://localhost:8000/.engine/"
+
+    Called once during lifespan startup. The result is stored on app.state.engine_ns
+    and is the base for consumer-facing engine URLs (view results and gated blobs).
+    """
+    return Namespace(base_uri.rstrip("/") + "/.engine/")
