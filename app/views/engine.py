@@ -17,10 +17,12 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.auth.deps import ConsumerTokenDep
+from app.config import get_settings
 from app.ldp.content import rdflib_format_for
 from app.ldp.deps import BackendDep
 from app.policy.enforce import check_policy
 from app.storage.backend import ResourceNotFound
+from app.views.binary import rewrite_binary_uris
 from app.views.model import bind_params, parse_view_record
 
 router = APIRouter(prefix="/.engine", tags=["engine"])
@@ -55,8 +57,14 @@ def get_view(
     if result.graph is None:
         raise HTTPException(status_code=500, detail="view query returned no graph")
 
+    # Replace raw storage URIs of shared binaries with gated engine proxy URLs so the
+    # consumer never dereferences pod storage directly.
+    engine_base = str(request.app.state.engine_ns)
+    base_uri = get_settings().base_uri
+    out_graph = rewrite_binary_uris(result.graph, base_uri, engine_base, view_id, bound, backend)
+
     fmt = rdflib_format_for(view.content_type_hint)
-    body = result.graph.serialize(format=fmt, encoding="utf-8")
+    body = out_graph.serialize(format=fmt, encoding="utf-8")
 
     # The +1 rides the count read at validate time; update_enforcement writes it
     # atomically under an RLock, which is acceptable for a single-user pod. The
