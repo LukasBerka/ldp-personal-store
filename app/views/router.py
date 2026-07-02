@@ -41,6 +41,7 @@ class ViewCreateRequest(BaseModel):
         "text/turtle"
     )
     params: list[ParamDeclRequest] = []
+    max_view_retrievals: int | None = None
 
 
 class ViewCreateResponse(BaseModel):
@@ -73,6 +74,7 @@ def _build_and_store(backend: StorageBackend, view_uri: str, body: ViewCreateReq
         body.construct_template,
         body.content_type_hint,
         decls,
+        max_view_retrievals=body.max_view_retrievals,
     )
     backend.write_system(view_uri, graph)
 
