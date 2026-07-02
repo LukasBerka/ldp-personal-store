@@ -105,3 +105,13 @@ class StorageBackend(Protocol):
         concurrent request can interleave on the same record.
         """
         ...
+
+    def update_view_enforcement(self, view_uri: str, count: int) -> None:
+        """Atomically overwrite only the per-view retrieval counter.
+
+        Overwrites pod:viewRetrievalCount with *count* on the view record at
+        *view_uri*, leaving every other triple intact. The read-modify-write runs
+        under a single lock acquisition so no concurrent request can interleave on
+        the same record.
+        """
+        ...
