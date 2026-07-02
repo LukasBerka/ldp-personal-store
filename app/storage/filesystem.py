@@ -18,7 +18,13 @@ from rdflib.query import Result
 
 from app.storage.backend import NotABinaryResource, ResourceNotFound, StorageError
 from app.storage.system import assert_public_uri, ensure_system_subtree
-from app.vocab import DC_format, LDP_NonRDFSource, POD_enforcementCount, POD_lastUsedAt
+from app.vocab import (
+    DC_format,
+    LDP_NonRDFSource,
+    POD_enforcementCount,
+    POD_lastUsedAt,
+    POD_viewRetrievalCount,
+)
 
 _IRI_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
@@ -185,6 +191,21 @@ class FilesystemBackend:
             graph.add((subject, POD_enforcementCount, Literal(count, datatype=XSD.integer)))
             graph.add((subject, POD_lastUsedAt, Literal(last_used_at, datatype=XSD.dateTime)))
             self.write_system(uri, graph)
+
+    def update_view_enforcement(self, view_uri: str, count: int) -> None:
+        subject = URIRef(view_uri)
+        with self._lock:
+            # Copy the view record's named graph, then rewrite only the counter — every
+            # other triple is carried through untouched. write_system re-acquires _lock,
+            # which the reentrant RLock permits, so the whole read-modify-write stays a
+            # single atomic section. A record lacking the counter is handled naturally:
+            # remove is a no-op and the triple is created.
+            graph = Graph()
+            for triple in self._graph.get_context(subject):
+                graph.add(triple)
+            graph.remove((subject, POD_viewRetrievalCount, None))
+            graph.add((subject, POD_viewRetrievalCount, Literal(count, datatype=XSD.integer)))
+            self.write_system(view_uri, graph)
 
     def stream_binary(self, uri: str, chunk_size: int = 65536) -> Iterator[bytes]:
         bin_path = _guard_within_root(
