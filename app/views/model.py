@@ -29,10 +29,12 @@ from app.vocab import (
     DC_title,
     POD_constructTemplate,
     POD_contentTypeHint,
+    POD_maxViewRetrievals,
     POD_parameter,
     POD_paramName,
     POD_paramType,
     POD_View,
+    POD_viewRetrievalCount,
 )
 
 ParamTypeName = Literal["str", "int", "iri"]
@@ -92,6 +94,7 @@ def to_view_graph(
     template: str,
     ct_hint: str,
     params: list[ParamDecl],
+    max_view_retrievals: int | None = None,
 ) -> Graph:
     """Serialize a view definition into an rdflib Graph ready for ``write_system``.
 
@@ -106,6 +109,12 @@ def to_view_graph(
     graph.add((subject, DC_description, RDFLiteral(description, datatype=XSD.string)))
     graph.add((subject, POD_constructTemplate, RDFLiteral(template, datatype=XSD.string)))
     graph.add((subject, POD_contentTypeHint, RDFLiteral(ct_hint, datatype=XSD.string)))
+    # Mutable per-view delivery state seeded at creation so enforcement can bump it in place.
+    graph.add((subject, POD_viewRetrievalCount, RDFLiteral(0, datatype=XSD.integer)))
+    if max_view_retrievals is not None:
+        graph.add(
+            (subject, POD_maxViewRetrievals, RDFLiteral(max_view_retrievals, datatype=XSD.integer))
+        )
     for param in params:
         pnode = BNode()
         graph.add((subject, POD_parameter, pnode))
