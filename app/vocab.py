@@ -92,6 +92,12 @@ POD_minInterval: URIRef = POD.minInterval  # xsd:integer seconds; min gap betwee
 POD_maxViewRetrievals: URIRef = POD.maxViewRetrievals  # xsd:integer; per-view delivery ceiling
 POD_viewRetrievalCount: URIRef = POD.viewRetrievalCount  # xsd:integer; mutable per-view count
 
+# Access-log terms
+POD_AccessLogEntry: URIRef = POD.AccessLogEntry  # rdf:type marker on one recorded delivery event
+POD_accessLogView: URIRef = POD.accessLogView  # URIRef to the .system/views/{id} that was served
+POD_accessLogToken: URIRef = POD.accessLogToken  # URIRef to the authorizing .system/tokens/{id}
+POD_accessLogTimestamp: URIRef = POD.accessLogTimestamp  # xsd:dateTime instant delivery was served
+
 
 # ---------------------------------------------------------------------------
 # .system namespace — derived from base URI at runtime
