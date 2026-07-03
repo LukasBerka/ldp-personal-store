@@ -28,6 +28,7 @@ from rdflib import URIRef
 
 from app.auth.deps import ConsumerTokenDep
 from app.config import get_settings
+from app.discovery.log import append_access_log_entry
 from app.ldp.content import binary_content_type, rdflib_format_for
 from app.ldp.deps import BackendDep
 from app.policy.enforce import check_policy
@@ -89,6 +90,9 @@ def get_view(
     current_view = int(str(graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
     backend.update_view_enforcement(view_uri, current_view + 1)
 
+    # Appended on confirmed delivery only, the same post-delivery discipline as the counters.
+    append_access_log_entry(backend, request.app.state.system_ns, view_uri, token.token_uri, now)
+
     return Response(content=body, media_type=view.content_type_hint)
 
 
@@ -146,6 +150,9 @@ def get_blob(
     # TOCTOU window as the per-grant counter: the read can race a concurrent bump.
     current_view = int(str(graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
     backend.update_view_enforcement(view_uri, current_view + 1)
+
+    # Appended on confirmed delivery only, the same post-delivery discipline as the counters.
+    append_access_log_entry(backend, request.app.state.system_ns, view_uri, token.token_uri, now)
 
     return StreamingResponse(
         backend.stream_binary(upstream_uri),
