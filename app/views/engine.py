@@ -119,6 +119,9 @@ def get_blob(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # Policy decision on the fully-validated request, before any data is produced.
+    check_policy(token, backend)
+
     result = backend.query(view.construct_template, init_bindings=bound)
     if result.graph is None:
         raise HTTPException(status_code=500, detail="view query returned no graph")
