@@ -34,6 +34,7 @@ from app.policy.enforce import check_policy
 from app.storage.backend import ResourceNotFound
 from app.views.binary import rewrite_binary_uris
 from app.views.model import bind_params, parse_view_record
+from app.vocab import POD_viewRetrievalCount
 
 router = APIRouter(prefix="/.engine", tags=["engine"])
 
@@ -81,6 +82,12 @@ def get_view(
     # counter bumps only here, after a successful CONSTRUCT and serialization.
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     backend.update_enforcement(token.token_uri, token.enforcement_count + 1, now)
+
+    # The per-view counter bumps only on successful delivery, alongside the per-grant
+    # counter, so both stay faithful to deliveries, not attempts. Same documented-acceptable
+    # TOCTOU window as the per-grant counter: the read can race a concurrent bump.
+    current_view = int(str(graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
+    backend.update_view_enforcement(view_uri, current_view + 1)
 
     return Response(content=body, media_type=view.content_type_hint)
 
@@ -133,6 +140,12 @@ def get_blob(
 
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     backend.update_enforcement(token.token_uri, token.enforcement_count + 1, now)
+
+    # The per-view counter bumps only on successful delivery, alongside the per-grant
+    # counter, so both stay faithful to deliveries, not attempts. Same documented-acceptable
+    # TOCTOU window as the per-grant counter: the read can race a concurrent bump.
+    current_view = int(str(graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
+    backend.update_view_enforcement(view_uri, current_view + 1)
 
     return StreamingResponse(
         backend.stream_binary(upstream_uri),
