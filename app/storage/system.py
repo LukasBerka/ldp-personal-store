@@ -18,7 +18,7 @@ def ensure_system_subtree(storage_root: Path) -> None:
 
     Idempotent: existing directories are left untouched.
     """
-    for subdir in ("views", "tokens", "tokens/policies"):
+    for subdir in ("views", "tokens", "tokens/policies", "access-log"):
         (storage_root / SYSTEM_SEGMENT / subdir).mkdir(parents=True, exist_ok=True)
 
 
