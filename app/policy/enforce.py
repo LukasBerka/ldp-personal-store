@@ -19,9 +19,11 @@ from app.storage.backend import ResourceNotFound, StorageBackend
 from app.vocab import (
     POD_expiresAt,
     POD_maxRetrievals,
+    POD_maxViewRetrievals,
     POD_minInterval,
     POD_validFrom,
     POD_validUntil,
+    POD_viewRetrievalCount,
 )
 
 # The lastUsedAt sentinel written at mint time. A token still parked at the epoch
@@ -90,3 +92,21 @@ def check_policy(record: TokenRecord, backend: StorageBackend) -> None:
         last_used = _parse_dt(record.last_used_at)
         if last_used != UNIX_EPOCH and (now - last_used).total_seconds() < int(str(min_interval)):
             raise HTTPException(status_code=403, detail="policy: min interval not elapsed")
+
+    # Per-view ceiling: a limit shared across every grant on the same view, held on
+    # the view record. Reading the .system/ view record is an O(1) named-graph slice
+    # and still precedes the upstream CONSTRUCT. Same documented-acceptable TOCTOU
+    # window as the per-grant counter — the count read here can race the post-delivery
+    # bump under concurrent requests, which is tolerated for a single-user pod.
+    if record.linked_view_uri is not None:
+        try:
+            view = backend.read(record.linked_view_uri)
+        except ResourceNotFound:
+            # A missing view record is a 404 resolved by the engine, not a policy denial.
+            return
+        view_subject = URIRef(record.linked_view_uri)
+        view_limit = view.value(view_subject, POD_maxViewRetrievals)
+        if view_limit is not None:
+            current = view.value(view_subject, POD_viewRetrievalCount)
+            if int(str(current or 0)) >= int(str(view_limit)):
+                raise HTTPException(status_code=403, detail="policy: view retrievals reached")
