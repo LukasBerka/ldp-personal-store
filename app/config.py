@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
 
+    # Dev-only autoreload file-watcher; off by default so the canonical run command
+    # is production-safe.
+    reload: bool = False
+
     # TLS enforcement policy (see check_tls_precondition below)
     # "off"        — no TLS; only safe when host is loopback
     # "required"   — uvicorn terminates TLS (ssl_keyfile + ssl_certfile must be set at launch)

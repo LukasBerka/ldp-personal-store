@@ -99,7 +99,7 @@ def run() -> None:
     import uvicorn
 
     settings = get_settings()
-    uvicorn.run("app.main:app", host=settings.host, port=settings.port, reload=True)
+    uvicorn.run("app.main:app", host=settings.host, port=settings.port, reload=settings.reload)
 
 
 if __name__ == "__main__":
