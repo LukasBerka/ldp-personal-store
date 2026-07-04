@@ -1,0 +1,245 @@
+"""The engine->storage HTTP boundary: client, credential, and consumer validation.
+
+The view engine reaches storage exclusively through :class:`StorageClient` — LDP
+GETs for records and binaries, the SPARQL 1.1 Protocol endpoint for queries, and
+the storage server's enforcement/log endpoints for its post-delivery writes. Every
+request presents the engine's bearer token, so the pod owner can cut the engine
+off at any time by revoking the ``.system/tokens/engine`` record. In the bundled
+deployment the transport is an in-process ASGI bridge — the same HTTP surface with
+no network socket; a split deployment points the client at a storage URL instead.
+
+Consumer and owner tokens presented to the engine are validated here as well: the
+engine holds no token records of its own, so it resolves a presented token by
+querying storage (under its engine credential) and comparing hashes exactly as the
+storage-side validator does.
+"""
+
+import hashlib
+import hmac
+from typing import Annotated
+
+import httpx
+from fastapi import Depends, HTTPException, Request
+from rdflib import Graph, URIRef
+
+from app.auth.deps import require_bearer
+from app.auth.tokens import TokenRecord
+from app.vocab import (
+    POD_AdminToken,
+    POD_ConsumerToken,
+    POD_enforcementCount,
+    POD_lastUsedAt,
+    POD_linkedView,
+    POD_policyRef,
+)
+
+_EPOCH = "1970-01-01T00:00:00Z"
+
+_LOOKUP_QUERY = """
+PREFIX pod: <urn:pod:vocab:>
+SELECT ?tokenUri ?stored ?tokenType WHERE {
+    ?tokenUri pod:tokenHash ?stored ;
+              a ?tokenType .
+    FILTER(str(?stored) = str(?presented))
+}
+"""
+
+
+class UpstreamError(Exception):
+    """Storage answered with an unexpected status (or refused the engine token)."""
+
+    def __init__(self, status_code: int, detail: str = "") -> None:
+        super().__init__(f"storage upstream returned {status_code}: {detail}")
+        self.status_code = status_code
+
+
+class UpstreamNotFound(UpstreamError):  # noqa: N818  intentional domain name
+    def __init__(self, uri: str) -> None:
+        super().__init__(404, uri)
+
+
+class StorageClient:
+    """Async client for the storage HTTP surface, authenticated as the view engine."""
+
+    def __init__(
+        self,
+        http: httpx.AsyncClient,
+        token: str,
+        base_uri: str,
+        storage_url: str | None = None,
+    ) -> None:
+        self._http = http
+        self._headers = {"Authorization": f"Bearer {token}"}
+        self._base_uri = base_uri
+        self._storage_base = storage_url if storage_url is not None else base_uri
+        if not self._storage_base.endswith("/"):
+            self._storage_base += "/"
+
+    def _url(self, uri: str) -> str:
+        # Resource URIs are minted under base_uri; a split deployment rebases them
+        # onto the storage server's listening URL.
+        return self._storage_base + uri.removeprefix(self._base_uri)
+
+    @staticmethod
+    def _expect(response: httpx.Response, status_code: int) -> None:
+        if response.status_code != status_code:
+            raise UpstreamError(response.status_code, response.text)
+
+    async def read_graph(self, uri: str) -> Graph:
+        response = await self._http.get(
+            self._url(uri), headers={**self._headers, "Accept": "text/turtle"}
+        )
+        if response.status_code == 404:
+            raise UpstreamNotFound(uri)
+        self._expect(response, 200)
+        graph = Graph()
+        graph.parse(data=response.text, format="turtle")
+        return graph
+
+    async def _query(self, sparql: str, bindings: dict[str, str] | None, accept: str):
+        # Parameter values travel as binding-<name> protocol extension fields and are
+        # bound server-side via initBindings — never spliced into the query text.
+        data = {"query": sparql}
+        if bindings:
+            data.update({f"binding-{name}": value for name, value in bindings.items()})
+        response = await self._http.post(
+            self._storage_base + "sparql",
+            data=data,
+            headers={**self._headers, "Accept": accept},
+        )
+        self._expect(response, 200)
+        return response
+
+    async def construct(self, sparql: str, bindings: dict[str, str] | None = None) -> Graph:
+        response = await self._query(sparql, bindings, "text/turtle")
+        graph = Graph()
+        graph.parse(data=response.text, format="turtle")
+        return graph
+
+    async def select(
+        self, sparql: str, bindings: dict[str, str] | None = None
+    ) -> list[dict[str, str]]:
+        response = await self._query(sparql, bindings, "application/sparql-results+json")
+        rows = response.json()["results"]["bindings"]
+        return [{name: cell["value"] for name, cell in row.items()} for row in rows]
+
+    async def open_binary_stream(self, uri: str) -> httpx.Response:
+        """Open a streaming LDP GET for a binary; the caller must close the response."""
+        request = self._http.build_request("GET", self._url(uri), headers=self._headers)
+        response = await self._http.send(request, stream=True)
+        if response.status_code != 200:
+            await response.aclose()
+            if response.status_code == 404:
+                raise UpstreamNotFound(uri)
+            raise UpstreamError(response.status_code)
+        return response
+
+    async def bump_token_enforcement(self, token_uri: str, count: int, last_used_at: str) -> None:
+        response = await self._http.post(
+            self._url(token_uri) + "/enforcement",
+            json={"count": count, "last_used_at": last_used_at},
+            headers=self._headers,
+        )
+        self._expect(response, 204)
+
+    async def bump_view_enforcement(self, view_uri: str, count: int) -> None:
+        response = await self._http.post(
+            self._url(view_uri) + "/enforcement",
+            json={"count": count},
+            headers=self._headers,
+        )
+        self._expect(response, 204)
+
+    async def append_access_log(self, view_uri: str, token_uri: str, timestamp: str) -> None:
+        response = await self._http.post(
+            self._storage_base + ".system/access-log",
+            json={"view_uri": view_uri, "token_uri": token_uri, "timestamp": timestamp},
+            headers=self._headers,
+        )
+        self._expect(response, 204)
+
+
+def _unauthorized() -> HTTPException:
+    # Identical 401 for every failure mode, mirroring the storage-side validator, so
+    # a caller can never distinguish "no such token" from "valid but wrong type".
+    return HTTPException(status_code=401, headers={"WWW-Authenticate": "Bearer"})
+
+
+async def validate_via_storage(
+    storage: StorageClient,
+    raw_token: str,
+    required_type: URIRef,
+) -> TokenRecord:
+    """Resolve a token presented to the engine through the storage HTTP surface.
+
+    Hashes the presented token, finds the record by hash over the SPARQL endpoint,
+    reads the record over the system surface, confirms the hash in constant time,
+    and requires *required_type* among the record's markers — every failure raises
+    the same 401.
+    """
+    presented_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    rows = await storage.select(_LOOKUP_QUERY, bindings={"presented": presented_hash})
+    if not rows:
+        raise _unauthorized()
+
+    # One row per rdf:type triple: collapse them into the record's identity plus the
+    # full set of its type markers.
+    stored_hash: str | None = None
+    token_uri: str | None = None
+    types: set[str] = set()
+    for row in rows:
+        stored_hash = row.get("stored", stored_hash)
+        token_uri = row.get("tokenUri", token_uri)
+        marker = row.get("tokenType")
+        if marker is not None:
+            types.add(marker)
+
+    if stored_hash is None or token_uri is None:
+        raise _unauthorized()
+    if not hmac.compare_digest(presented_hash, stored_hash):
+        raise _unauthorized()
+    if str(required_type) not in types:
+        raise _unauthorized()
+
+    try:
+        record = await storage.read_graph(token_uri)
+    except UpstreamNotFound as exc:
+        raise _unauthorized() from exc
+    subject = URIRef(token_uri)
+    count = record.value(subject, POD_enforcementCount)
+    view = record.value(subject, POD_linkedView)
+    policy = record.value(subject, POD_policyRef)
+    last_used = record.value(subject, POD_lastUsedAt)
+    return TokenRecord(
+        token_uri=token_uri,
+        token_type=str(required_type),
+        linked_view_uri=str(view) if view is not None else None,
+        policy_ref=str(policy) if policy is not None else None,
+        enforcement_count=int(str(count)) if count is not None else 0,
+        last_used_at=str(last_used) if last_used is not None else _EPOCH,
+    )
+
+
+def get_storage(request: Request) -> StorageClient:
+    return request.app.state.storage
+
+
+StorageDep = Annotated[StorageClient, Depends(get_storage)]
+
+
+async def get_engine_consumer_token(
+    raw: Annotated[str, Depends(require_bearer)],
+    storage: StorageDep,
+) -> TokenRecord:
+    return await validate_via_storage(storage, raw, POD_ConsumerToken)
+
+
+async def get_engine_admin_token(
+    raw: Annotated[str, Depends(require_bearer)],
+    storage: StorageDep,
+) -> TokenRecord:
+    return await validate_via_storage(storage, raw, POD_AdminToken)
+
+
+EngineConsumerDep = Annotated[TokenRecord, Depends(get_engine_consumer_token)]
+EngineAdminDep = Annotated[TokenRecord, Depends(get_engine_admin_token)]

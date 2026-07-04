@@ -1,14 +1,14 @@
 """Rewrite upstream binary URIs in a view's CONSTRUCT result into gated proxy URLs.
 
 A view result may reference pod-local binary resources (``ldp:NonRDFSource``) by
-their raw storage URI. Handing those URIs to a consumer would let it dereference
+their raw storage URI. Handing those URIs to a consumer would let it point at
 storage directly, bypassing the token/policy boundary. :func:`rewrite_binary_uris`
 replaces every such URI — in both subject and object position — with an
 engine-namespace proxy URL that routes back through the gated blob endpoint.
 
-Detection is injection-safe: candidate URIs come only from the pod's own CONSTRUCT
-output, are filtered to those under the pod base URI, and each is confirmed with an
-``ASK`` bound through ``initBindings`` rather than string-built from external input.
+Detection is injection-safe: the set of binary URIs is fetched from storage with a
+constant SPARQL query (no external input reaches the query text) and intersected
+locally with the URIs appearing in the pod's own CONSTRUCT output.
 """
 
 from urllib.parse import quote
@@ -16,17 +16,20 @@ from urllib.parse import quote
 from rdflib import Graph, URIRef
 from rdflib.term import Node
 
-from app.storage.backend import StorageBackend
-from app.vocab import LDP_NonRDFSource
+from app.upstream import StorageClient
+
+_BINARY_SUBJECTS_QUERY = (
+    "PREFIX ldp: <http://www.w3.org/ns/ldp#> SELECT ?s WHERE { ?s a ldp:NonRDFSource }"
+)
 
 
-def rewrite_binary_uris(
+async def rewrite_binary_uris(
     graph: Graph,
     base_uri: str,
     engine_base: str,
     view_id: str,
     bound_params: dict[str, str],
-    backend: StorageBackend,
+    storage: StorageClient,
 ) -> Graph:
     """Return a new graph with pod-local binary URIs rewritten to engine proxy URLs.
 
@@ -41,14 +44,13 @@ def rewrite_binary_uris(
         for term in (subject, obj):
             if isinstance(term, URIRef) and str(term).startswith(base_uri):
                 candidates.add(term)
+    if not candidates:
+        return graph
 
+    binaries = {row["s"] for row in await storage.select(_BINARY_SUBJECTS_QUERY)}
     mapping: dict[URIRef, URIRef] = {}
     for uri in candidates:
-        result = backend.query(
-            "ASK { ?s a ?t }",
-            init_bindings={"s": str(uri), "t": str(LDP_NonRDFSource)},
-        )
-        if result.askAnswer:
+        if str(uri) in binaries:
             # The original param bindings are re-encoded into the proxy URL so the
             # blob endpoint can re-run the identical CONSTRUCT to re-authorize access.
             pairs = {"uri": str(uri), **bound_params}

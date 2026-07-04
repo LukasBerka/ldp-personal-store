@@ -2,21 +2,24 @@
 
 ``GET /.engine/views/{view_id}`` authenticates a consumer bearer token, confirms
 the token is scoped to the requested view, loads the view definition from its
-``.system/views/{id}`` record, binds query-string parameters as injection-safe
-initBindings, runs the view's CONSTRUCT, serializes the result in the view's
-declared content type, and bumps the token's enforcement counter — in that order.
-The CONSTRUCT re-runs on every request; nothing is materialized or cached.
+``.system/views/{id}`` record, binds query-string parameters, runs the view's
+CONSTRUCT, serializes the result in the view's declared content type, and bumps
+the enforcement counters — in that order. The CONSTRUCT re-runs on every request;
+nothing is materialized or cached.
 
-The view resource always loads from the ``.system/views/{id}`` URI the token's
-linked-view reference points at. The ``.engine/`` namespace is only the route
-prefix, never where the view definition lives.
+Every storage interaction crosses the engine->storage HTTP boundary through the
+:class:`~app.upstream.StorageClient` under the engine's own credential: record
+loads are LDP GETs, queries go to the SPARQL Protocol endpoint (parameters as
+``binding-`` extension fields), and the post-delivery counter and log writes hit
+the storage server's enforcement endpoints. The engine touches no backend state
+directly, so revoking the engine's token cuts it off from the pod entirely.
 
 ``GET /.engine/blob/{view_id}`` is the gated proxy for the binary URIs the primary
 handler rewrites. It re-validates the same consumer token and scope, guards the
 decoded upstream URI against open-proxy abuse, re-runs the view's CONSTRUCT to
-confirm the binary is still in-result, and only then streams the upstream bytes with
-their native Content-Type — so a consumer reaches a shared binary exclusively through
-this re-authorized path, never storage directly.
+confirm the binary is still in-result, and only then streams the upstream bytes
+with the Content-Type the storage LDP surface reports — so a consumer reaches a
+shared binary exclusively through this re-authorized path, never storage directly.
 """
 
 from datetime import UTC, datetime
@@ -24,38 +27,73 @@ from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
-from rdflib import URIRef
+from rdflib import Graph, URIRef
+from starlette.background import BackgroundTask
 
-from app.auth.deps import ConsumerTokenDep
 from app.config import get_settings
-from app.discovery.log import append_access_log_entry
-from app.ldp.content import binary_content_type, rdflib_format_for
-from app.ldp.deps import BackendDep
+from app.ldp.content import rdflib_format_for
 from app.policy.enforce import check_policy
-from app.storage.backend import ResourceNotFound
+from app.upstream import EngineConsumerDep, StorageClient, StorageDep, UpstreamNotFound
 from app.views.binary import rewrite_binary_uris
-from app.views.model import bind_params, parse_view_record
+from app.views.model import ViewRecord, bind_params, parse_view_record
 from app.vocab import POD_viewRetrievalCount
 
 router = APIRouter(prefix="/.engine", tags=["engine"])
 
 
+async def _load_view(storage: StorageClient, view_uri: str) -> tuple[Graph, ViewRecord]:
+    try:
+        graph = await storage.read_graph(view_uri)
+    except UpstreamNotFound as exc:
+        raise HTTPException(status_code=404) from exc
+    return graph, parse_view_record(graph, view_uri)
+
+
+async def _load_policy(storage: StorageClient, policy_ref: str | None) -> Graph | None:
+    if policy_ref is None:
+        return None
+    try:
+        return await storage.read_graph(policy_ref)
+    except UpstreamNotFound:
+        # The policy URI is a stable placeholder on every token; when no graph was
+        # ever written there the grant is unconstrained.
+        return None
+
+
+async def _record_delivery(
+    storage: StorageClient,
+    token_uri: str,
+    token_count: int,
+    view_uri: str,
+    view_graph: Graph,
+    now: str,
+) -> None:
+    """Bump both counters and append the access-log entry for a confirmed delivery.
+
+    The +1 rides the count read at validate time; the storage server applies each
+    write atomically per record, and the read-to-bump race is the documented
+    TOCTOU window accepted for a single-user pod. Counters and log stay faithful
+    to deliveries, not attempts, because this runs only after a successful
+    CONSTRUCT (and serialization, on the primary path).
+    """
+    await storage.bump_token_enforcement(token_uri, token_count + 1, now)
+    current_view = int(str(view_graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
+    await storage.bump_view_enforcement(view_uri, current_view + 1)
+    await storage.append_access_log(view_uri, token_uri, now)
+
+
 @router.get("/views/{view_id}")
-def get_view(
+async def get_view(
     view_id: str,
     request: Request,
-    backend: BackendDep,
-    token: ConsumerTokenDep,
+    storage: StorageDep,
+    token: EngineConsumerDep,
 ) -> Response:
     view_uri = str(request.app.state.system_ns) + "views/" + view_id
     if token.linked_view_uri != view_uri:
         raise HTTPException(status_code=403)
 
-    try:
-        graph = backend.read(view_uri)
-    except ResourceNotFound as exc:
-        raise HTTPException(status_code=404) from exc
-    view = parse_view_record(graph, view_uri)
+    graph, view = await _load_view(storage, view_uri)
 
     try:
         bound = bind_params(view.params, dict(request.query_params))
@@ -63,45 +101,30 @@ def get_view(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # Policy decision on the fully-validated request, before any data is produced.
-    check_policy(token, backend)
+    check_policy(token, await _load_policy(storage, token.policy_ref), graph)
 
-    result = backend.query(view.construct_template, init_bindings=bound)
-    if result.graph is None:
-        raise HTTPException(status_code=500, detail="view query returned no graph")
+    result = await storage.construct(view.construct_template, bindings=bound)
 
     # Replace raw storage URIs of shared binaries with gated engine proxy URLs so the
     # consumer never dereferences pod storage directly.
     engine_base = str(request.app.state.engine_ns)
     base_uri = get_settings().base_uri
-    out_graph = rewrite_binary_uris(result.graph, base_uri, engine_base, view_id, bound, backend)
+    out_graph = await rewrite_binary_uris(result, base_uri, engine_base, view_id, bound, storage)
 
-    fmt = rdflib_format_for(view.content_type_hint)
-    body = out_graph.serialize(format=fmt, encoding="utf-8")
+    body = out_graph.serialize(format=rdflib_format_for(view.content_type_hint), encoding="utf-8")
 
-    # The +1 rides the count read at validate time; update_enforcement writes it
-    # atomically under an RLock, which is acceptable for a single-user pod. The
-    # counter bumps only here, after a successful CONSTRUCT and serialization.
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    backend.update_enforcement(token.token_uri, token.enforcement_count + 1, now)
-
-    # The per-view counter bumps only on successful delivery, alongside the per-grant
-    # counter, so both stay faithful to deliveries, not attempts. Same documented-acceptable
-    # TOCTOU window as the per-grant counter: the read can race a concurrent bump.
-    current_view = int(str(graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
-    backend.update_view_enforcement(view_uri, current_view + 1)
-
-    # Appended on confirmed delivery only, the same post-delivery discipline as the counters.
-    append_access_log_entry(backend, request.app.state.system_ns, view_uri, token.token_uri, now)
+    await _record_delivery(storage, token.token_uri, token.enforcement_count, view_uri, graph, now)
 
     return Response(content=body, media_type=view.content_type_hint)
 
 
 @router.get("/blob/{view_id}")
-def get_blob(
+async def get_blob(
     view_id: str,
     request: Request,
-    backend: BackendDep,
-    token: ConsumerTokenDep,
+    storage: StorageDep,
+    token: EngineConsumerDep,
 ) -> StreamingResponse:
     view_uri = str(request.app.state.system_ns) + "views/" + view_id
     if token.linked_view_uri != view_uri:
@@ -116,11 +139,7 @@ def get_blob(
     if not upstream_uri.startswith(base_uri):
         raise HTTPException(status_code=400)
 
-    try:
-        graph = backend.read(view_uri)
-    except ResourceNotFound as exc:
-        raise HTTPException(status_code=404) from exc
-    view = parse_view_record(graph, view_uri)
+    graph, view = await _load_view(storage, view_uri)
 
     # The forwarded "uri" key is not a declared param, so bind_params ignores it. A view
     # that happened to declare a param literally named "uri" is an accepted edge case:
@@ -131,30 +150,24 @@ def get_blob(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # Policy decision on the fully-validated request, before any data is produced.
-    check_policy(token, backend)
+    check_policy(token, await _load_policy(storage, token.policy_ref), graph)
 
-    result = backend.query(view.construct_template, init_bindings=bound)
-    if result.graph is None:
-        raise HTTPException(status_code=500, detail="view query returned no graph")
+    result = await storage.construct(view.construct_template, bindings=bound)
 
     # A stale proxy URL — the binary is no longer produced by the view — is unreachable.
-    subjects = {str(s) for s in result.graph.subjects() if isinstance(s, URIRef)}
+    subjects = {str(s) for s in result.subjects() if isinstance(s, URIRef)}
     if upstream_uri not in subjects:
         raise HTTPException(status_code=404)
 
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    backend.update_enforcement(token.token_uri, token.enforcement_count + 1, now)
+    await _record_delivery(storage, token.token_uri, token.enforcement_count, view_uri, graph, now)
 
-    # The per-view counter bumps only on successful delivery, alongside the per-grant
-    # counter, so both stay faithful to deliveries, not attempts. Same documented-acceptable
-    # TOCTOU window as the per-grant counter: the read can race a concurrent bump.
-    current_view = int(str(graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
-    backend.update_view_enforcement(view_uri, current_view + 1)
-
-    # Appended on confirmed delivery only, the same post-delivery discipline as the counters.
-    append_access_log_entry(backend, request.app.state.system_ns, view_uri, token.token_uri, now)
-
+    try:
+        upstream = await storage.open_binary_stream(upstream_uri)
+    except UpstreamNotFound as exc:
+        raise HTTPException(status_code=404) from exc
     return StreamingResponse(
-        backend.stream_binary(upstream_uri),
-        media_type=binary_content_type(backend, upstream_uri),
+        upstream.aiter_bytes(),
+        media_type=upstream.headers.get("content-type", "application/octet-stream"),
+        background=BackgroundTask(upstream.aclose),
     )

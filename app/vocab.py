@@ -65,7 +65,8 @@ POD = Namespace("urn:pod:vocab:")
 # Token record classes
 POD_Token: URIRef = POD.Token  # common supertype
 POD_ConsumerToken: URIRef = POD.ConsumerToken  # consumer-facing bearer token
-POD_AdminToken: URIRef = POD.AdminToken  # engine-to-storage administrative token
+POD_AdminToken: URIRef = POD.AdminToken  # pod-owner administrative token
+POD_EngineToken: URIRef = POD.EngineToken  # engine-to-storage request-path credential
 
 # Token record properties
 POD_tokenHash: URIRef = POD.tokenHash  # xsd:string SHA-256 hex digest

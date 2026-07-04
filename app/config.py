@@ -46,6 +46,19 @@ class Settings(BaseSettings):
     # admin token and logs it once instead.
     admin_token: str | None = None
 
+    # Optional PLAINTEXT engine token: the credential the view engine presents on the
+    # engine->storage boundary. Only its SHA-256 hash is persisted. Left unset, the
+    # bundled deployment mints a fresh engine token on every startup and keeps the
+    # plaintext in process memory only; set it explicitly when the engine runs as a
+    # separate process against a remote storage server.
+    engine_token: str | None = None
+
+    # Base URL of the upstream storage server the view engine talks to. Left unset
+    # (the bundled deployment), the engine reaches storage through an in-process
+    # ASGI transport — the same HTTP surface, no network socket. Set it to run the
+    # engine against a storage server listening elsewhere (loopback or remote).
+    storage_url: str | None = None
+
     @field_validator("base_uri")
     @classmethod
     def _ensure_trailing_slash(cls, v: str) -> str:

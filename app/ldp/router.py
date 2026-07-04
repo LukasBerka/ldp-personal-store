@@ -1,5 +1,11 @@
 """LDP HTTP layer: RDF resource and container endpoints over the storage backend.
 
+The whole surface is gated by the storage server's administrative credentials:
+data consumers never talk to storage directly — they reach data only through the
+view engine. Reads accept the pod owner's admin token or the engine's token (the
+engine dereferences resources and streams binaries on consumers' behalf); writes
+require the owner's admin token, so the engine cannot author or remove resources.
+
 Handlers are synchronous: the backend performs blocking rdflib, lock, and
 filesystem work, and FastAPI runs sync path operations in a threadpool, which is
 the correct execution model for blocking code.
@@ -7,10 +13,11 @@ the correct execution model for blocking code.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Header, HTTPException, Response
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from rdflib import Graph, URIRef
 
+from app.auth.deps import get_admin_token, get_storage_token
 from app.config import SettingsDep
 from app.ldp.containers import (
     container_kind,
@@ -52,6 +59,11 @@ from app.vocab import (
 )
 
 router = APIRouter(tags=["ldp"])
+
+# Read-side routes accept either administrative credential; write-side routes are
+# owner-only. Attached per route because a router-level dependency cannot vary by verb.
+_READ = [Depends(get_storage_token)]
+_WRITE = [Depends(get_admin_token)]
 
 _RDF_LINK = link_header([LDP_Resource, LDP_RDFSource])
 _BINARY_LINK = link_header([LDP_Resource, LDP_NonRDFSource])
@@ -321,7 +333,7 @@ def _detach_from_parent(backend: StorageBackend, base_uri: str, member_uri: str)
         raise _http_error(exc) from exc
 
 
-@router.api_route("/", methods=["GET", "HEAD"])
+@router.api_route("/", methods=["GET", "HEAD"], dependencies=_READ)
 def get_root(
     backend: BackendDep,
     settings: SettingsDep,
@@ -331,7 +343,7 @@ def get_root(
     return _get_resource(backend, settings.base_uri, "", accept, if_none_match)
 
 
-@router.api_route("/{path:path}", methods=["GET", "HEAD"])
+@router.api_route("/{path:path}", methods=["GET", "HEAD"], dependencies=_READ)
 def get_resource(
     path: str,
     backend: BackendDep,
@@ -342,7 +354,7 @@ def get_resource(
     return _get_resource(backend, settings.base_uri, path, accept, if_none_match)
 
 
-@router.put("/")
+@router.put("/", dependencies=_WRITE)
 def put_root(
     backend: BackendDep,
     settings: SettingsDep,
@@ -356,7 +368,7 @@ def put_root(
     )
 
 
-@router.put("/{path:path}")
+@router.put("/{path:path}", dependencies=_WRITE)
 def put_resource(
     path: str,
     backend: BackendDep,
@@ -371,7 +383,7 @@ def put_resource(
     )
 
 
-@router.post("/")
+@router.post("/", dependencies=_WRITE)
 def post_root(
     backend: BackendDep,
     settings: SettingsDep,
@@ -382,7 +394,7 @@ def post_root(
     return _post_member(backend, settings.base_uri, "", body, content_type, slug)
 
 
-@router.post("/{path:path}")
+@router.post("/{path:path}", dependencies=_WRITE)
 def post_resource(
     path: str,
     backend: BackendDep,
@@ -394,7 +406,7 @@ def post_resource(
     return _post_member(backend, settings.base_uri, path, body, content_type, slug)
 
 
-@router.delete("/{path:path}", status_code=204)
+@router.delete("/{path:path}", status_code=204, dependencies=_WRITE)
 def delete_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Response:
     uri = settings.base_uri + path
     # A binary resource is invisible to read (only its sidecar exists), so a
@@ -419,11 +431,11 @@ def delete_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Re
     return Response(status_code=204)
 
 
-@router.options("/")
+@router.options("/", dependencies=_READ)
 def options_root() -> Response:
     return Response(status_code=200, headers={"Allow": ALLOW_RDF})
 
 
-@router.options("/{path:path}")
+@router.options("/{path:path}", dependencies=_READ)
 def options_resource() -> Response:
     return Response(status_code=200, headers={"Allow": ALLOW_RDF})

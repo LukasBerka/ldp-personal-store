@@ -1,9 +1,11 @@
 """Consumer-facing discovery container at ``/.engine/discovery``.
 
-``GET /.engine/discovery`` authenticates a consumer bearer token and returns a
-virtual LDP Basic Container listing only the view(s) that token unlocks. The
-container is synthesized in memory on each request from the token's linked-view
-reference; it is never persisted and does not pass through the LDP router.
+``GET /.engine/discovery`` authenticates a consumer bearer token (resolved through
+the storage boundary under the engine's credential, like every engine request) and
+returns a virtual LDP Basic Container listing only the view(s) that token unlocks.
+The container is synthesized in memory on each request from the token's
+linked-view reference; it is never persisted and does not pass through the LDP
+router.
 
 A member is emitted only when the token is scoped to a view, so a token with no
 linked view yields a valid but empty container rather than an error.
@@ -13,10 +15,9 @@ from fastapi import APIRouter, Request, Response
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from app.auth.deps import AdminTokenDep, ConsumerTokenDep
 from app.discovery.stats import StatsResponse, compute_stats
 from app.ldp.content import link_header
-from app.ldp.deps import BackendDep
+from app.upstream import EngineAdminDep, EngineConsumerDep, StorageDep
 from app.vocab import (
     LDP_BasicContainer,
     LDP_Container,
@@ -29,7 +30,7 @@ router = APIRouter(prefix="/.engine", tags=["discovery"])
 
 
 @router.get("/discovery")
-def discover(request: Request, token: ConsumerTokenDep) -> Response:
+def discover(request: Request, token: EngineConsumerDep) -> Response:
     container_uri = str(request.app.state.engine_ns) + "discovery"
     subject = URIRef(container_uri)
 
@@ -57,7 +58,7 @@ def discover(request: Request, token: ConsumerTokenDep) -> Response:
 
 
 @router.get("/stats")
-def stats(request: Request, backend: BackendDep, token: AdminTokenDep) -> StatsResponse:
+async def stats(storage: StorageDep, token: EngineAdminDep) -> StatsResponse:
     # An owner management read over the access log, admin-gated and distinct from the
     # consumer-facing discovery listing above.
-    return compute_stats(backend)
+    return await compute_stats(storage)

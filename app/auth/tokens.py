@@ -10,6 +10,7 @@ time so a diverging comparison cannot leak through response latency.
 import hashlib
 import hmac
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from fastapi import HTTPException
@@ -21,6 +22,7 @@ from app.vocab import (
     POD_AdminToken,
     POD_ConsumerToken,
     POD_enforcementCount,
+    POD_EngineToken,
     POD_lastUsedAt,
     POD_linkedView,
     POD_policyRef,
@@ -119,17 +121,18 @@ def mint_token(
     return plaintext, token_uri
 
 
-def validate_token(
+def validate_token_one_of(
     backend: StorageBackend,
     raw_token: str,
-    required_type: URIRef,
+    allowed_types: Sequence[URIRef],
 ) -> TokenRecord:
     """Resolve *raw_token* to its record, or raise an indistinguishable 401.
 
     Hashes the presented token, looks the record up by hash, confirms the match with
-    a constant-time compare, and requires *required_type* among the record's rdf:type
-    markers. Every failure — not found, revoked, hash mismatch, wrong type — raises the
-    same 401 body so validity and type never leak.
+    a constant-time compare, and requires at least one of *allowed_types* among the
+    record's rdf:type markers; the first match becomes the record's reported type.
+    Every failure — not found, revoked, hash mismatch, wrong type — raises the same
+    401 body so validity and type never leak.
     """
     presented_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     rows = backend.query(_LOOKUP_QUERY, init_bindings={"presented": presented_hash}).bindings
@@ -156,7 +159,8 @@ def validate_token(
         raise _unauthorized()
     if not hmac.compare_digest(presented_hash, stored_hash):
         raise _unauthorized()
-    if str(required_type) not in types:
+    matched_type = next((t for t in allowed_types if str(t) in types), None)
+    if matched_type is None:
         raise _unauthorized()
 
     subject = URIRef(token_uri)
@@ -167,12 +171,21 @@ def validate_token(
     last_used = record.value(subject, POD_lastUsedAt)
     return TokenRecord(
         token_uri=token_uri,
-        token_type=str(required_type),
+        token_type=str(matched_type),
         linked_view_uri=str(view) if view is not None else None,
         policy_ref=str(policy) if policy is not None else None,
         enforcement_count=int(str(count)) if count is not None else 0,
         last_used_at=str(last_used) if last_used is not None else _EPOCH,
     )
+
+
+def validate_token(
+    backend: StorageBackend,
+    raw_token: str,
+    required_type: URIRef,
+) -> TokenRecord:
+    """Single-type convenience wrapper over :func:`validate_token_one_of`."""
+    return validate_token_one_of(backend, raw_token, (required_type,))
 
 
 def revoke_token(backend: StorageBackend, record_uri: str) -> None:
@@ -211,6 +224,32 @@ def bootstrap_admin_token(
         "admin",
         hashlib.sha256(plaintext.encode()).hexdigest(),
         POD_AdminToken,
+        None,
+    )
+    return plaintext
+
+
+def bootstrap_engine_token(
+    backend: StorageBackend,
+    system_ns: Namespace,
+    engine_token: str | None = None,
+) -> str:
+    """Seed the engine's storage credential at a fixed record id; return the plaintext.
+
+    The record lives at ``.system/tokens/engine`` so the pod owner can revoke the
+    engine's read access at any time by deleting it. With *engine_token* supplied
+    (split deployments, tests) its hash is seeded deterministically; otherwise a
+    fresh random token is minted on every startup and the plaintext exists only in
+    process memory — the bundled engine is handed it directly and nothing else ever
+    needs it. Only the SHA-256 hash is persisted either way.
+    """
+    plaintext = engine_token if engine_token is not None else secrets.token_urlsafe(32)
+    _write_record(
+        backend,
+        system_ns,
+        "engine",
+        hashlib.sha256(plaintext.encode()).hexdigest(),
+        POD_EngineToken,
         None,
     )
     return plaintext

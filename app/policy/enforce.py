@@ -2,20 +2,20 @@
 
 The enforcement seam sits between parameter binding and CONSTRUCT execution so a
 policy decision is made against a fully-validated request before any upstream data
-is produced. A token carries a 1:1 reference to a policy resource; when that
-resource exists, its constraints are read from the graph and each is checked
-independently. A request that violates any constraint is denied with
-HTTPException(403); an absent policy resource, or an absent individual constraint,
-is a clean pass-through.
+is produced. A token carries a 1:1 reference to a policy resource; the engine
+fetches that resource (and already holds the view record) over the storage
+boundary and hands both graphs to :func:`check_policy`, which is a pure decision:
+each constraint present is checked independently, a request that violates any
+constraint is denied with HTTPException(403), and an absent policy graph, or an
+absent individual constraint, is a clean pass-through.
 """
 
 from datetime import UTC, datetime
 
 from fastapi import HTTPException
-from rdflib import URIRef
+from rdflib import Graph, URIRef
 
 from app.auth.tokens import TokenRecord
-from app.storage.backend import ResourceNotFound, StorageBackend
 from app.vocab import (
     POD_expiresAt,
     POD_maxRetrievals,
@@ -43,48 +43,47 @@ def _parse_dt(value: str) -> datetime:
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
-def check_policy(record: TokenRecord, backend: StorageBackend) -> None:
+def check_policy(
+    record: TokenRecord,
+    policy_graph: Graph | None,
+    view_graph: Graph | None,
+) -> None:
     """Enforce the access policy referenced by the token record.
 
     Returns normally when the request may proceed, and raises HTTPException(403)
-    naming the violated constraint otherwise. Every check runs before any upstream
-    user-data read. A token with no policy reference, or one whose policy resource
-    was never written, carries no constraint and passes through.
+    naming the violated constraint otherwise. *policy_graph* is None when the
+    token carries no policy reference or the policy resource was never written —
+    such a grant carries no constraint and passes through. *view_graph* carries
+    the per-view ceiling and its counter when the token is scoped to a view.
     """
-    if record.policy_ref is None:
-        return
-    try:
-        policy = backend.read(record.policy_ref)
-    except ResourceNotFound:
-        # The policy URI is a stable placeholder on every token; when no graph was
-        # ever written there the grant is unconstrained and the request proceeds.
+    if policy_graph is None:
         return
 
     now = datetime.now(UTC)
-    subject = URIRef(record.policy_ref)
+    subject = URIRef(record.policy_ref or "")
 
     # Boundary rule for the time checks: an instant exactly on a bound is allowed;
     # only a strictly-past (or, for validFrom, strictly-early) instant denies. The
     # validity window is inclusive of both validFrom and validUntil.
-    expires_at = policy.value(subject, POD_expiresAt)
+    expires_at = policy_graph.value(subject, POD_expiresAt)
     if expires_at is not None and now > _parse_dt(str(expires_at)):
         raise HTTPException(status_code=403, detail="policy: expired")
 
-    valid_from = policy.value(subject, POD_validFrom)
+    valid_from = policy_graph.value(subject, POD_validFrom)
     if valid_from is not None and now < _parse_dt(str(valid_from)):
         raise HTTPException(status_code=403, detail="policy: not yet valid")
 
-    valid_until = policy.value(subject, POD_validUntil)
+    valid_until = policy_graph.value(subject, POD_validUntil)
     if valid_until is not None and now > _parse_dt(str(valid_until)):
         raise HTTPException(status_code=403, detail="policy: window elapsed")
 
     # Per-grant ceiling: the counter is bumped once per delivery, so at count N-1 the
     # Nth delivery is still allowed and at count N (the limit) the grant is exhausted.
-    max_retrievals = policy.value(subject, POD_maxRetrievals)
+    max_retrievals = policy_graph.value(subject, POD_maxRetrievals)
     if max_retrievals is not None and record.enforcement_count >= int(str(max_retrievals)):
         raise HTTPException(status_code=403, detail="policy: max retrievals reached")
 
-    min_interval = policy.value(subject, POD_minInterval)
+    min_interval = policy_graph.value(subject, POD_minInterval)
     if min_interval is not None:
         # last_used_at is written by the post-delivery counter bump; the epoch sentinel
         # means "never delivered", so the first delivery is always allowed. An elapsed
@@ -94,19 +93,14 @@ def check_policy(record: TokenRecord, backend: StorageBackend) -> None:
             raise HTTPException(status_code=403, detail="policy: min interval not elapsed")
 
     # Per-view ceiling: a limit shared across every grant on the same view, held on
-    # the view record. Reading the .system/ view record is an O(1) named-graph slice
-    # and still precedes the upstream CONSTRUCT. Same documented-acceptable TOCTOU
-    # window as the per-grant counter — the count read here can race the post-delivery
-    # bump under concurrent requests, which is tolerated for a single-user pod.
-    if record.linked_view_uri is not None:
-        try:
-            view = backend.read(record.linked_view_uri)
-        except ResourceNotFound:
-            # A missing view record is a 404 resolved by the engine, not a policy denial.
-            return
+    # the view record the engine already fetched for this request. Same
+    # documented-acceptable TOCTOU window as the per-grant counter — the count read
+    # here can race the post-delivery bump under concurrent requests, which is
+    # tolerated for a single-user pod.
+    if view_graph is not None and record.linked_view_uri is not None:
         view_subject = URIRef(record.linked_view_uri)
-        view_limit = view.value(view_subject, POD_maxViewRetrievals)
+        view_limit = view_graph.value(view_subject, POD_maxViewRetrievals)
         if view_limit is not None:
-            current = view.value(view_subject, POD_viewRetrievalCount)
+            current = view_graph.value(view_subject, POD_viewRetrievalCount)
             if int(str(current or 0)) >= int(str(view_limit)):
                 raise HTTPException(status_code=403, detail="policy: view retrievals reached")

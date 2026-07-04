@@ -2,15 +2,14 @@
 
 The owner reads aggregate and per-view delivery counts by aggregating the
 ``pod:AccessLogEntry`` resources the delivery paths append under
-``.system/access-log/``. Both queries run over the backend's union graph, where
-every log entry is its own named-graph context, so a graph-clause-free WHERE sees
-them all without any per-graph plumbing.
+``.system/access-log/``. The engine runs both aggregations over the storage
+boundary's SPARQL endpoint, where every log entry is its own named-graph context
+in the backend's union graph, so a graph-clause-free WHERE sees them all.
 """
 
 from pydantic import BaseModel
-from rdflib.term import Variable
 
-from app.storage.backend import StorageBackend
+from app.upstream import StorageClient
 
 # The POD vocabulary is a fixed urn: namespace, never derived from the pod's base URI.
 _TOTAL_SPARQL = (
@@ -35,20 +34,17 @@ class StatsResponse(BaseModel):
     by_view: list[ViewCount]
 
 
-def compute_stats(backend: StorageBackend) -> StatsResponse:
+async def compute_stats(storage: StorageClient) -> StatsResponse:
     """Aggregate the access log into a total and a per-view delivery breakdown."""
     total = 0
-    for row in backend.query(_TOTAL_SPARQL).bindings:
-        value = row.get(Variable("total"))
-        if value is not None:
-            total = int(str(value))
+    for row in await storage.select(_TOTAL_SPARQL):
+        if "total" in row:
+            total = int(row["total"])
 
     by_view: list[ViewCount] = []
-    for row in backend.query(_BY_VIEW_SPARQL).bindings:
-        view = row.get(Variable("view"))
-        count = row.get(Variable("count"))
-        if view is None or count is None:
+    for row in await storage.select(_BY_VIEW_SPARQL):
+        if "view" not in row or "count" not in row:
             continue
-        by_view.append(ViewCount(view_uri=str(view), count=int(str(count))))
+        by_view.append(ViewCount(view_uri=row["view"], count=int(row["count"])))
 
     return StatsResponse(total=total, by_view=by_view)

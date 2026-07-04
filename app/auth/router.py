@@ -1,22 +1,26 @@
-"""Admin-gated management router for the reserved ``.system/`` subtree.
+"""Management router for the reserved ``.system/`` subtree.
 
-Every route requires a valid admin token via the router-level dependency, and the
-router is mounted ahead of the public LDP catch-all so ``.system/`` paths are
-adjudicated here — issuing consumer tokens, revoking token records, and serving
-administrative reads — instead of reaching the public handlers.
+Mounted ahead of the public LDP catch-all so ``.system/`` paths are adjudicated
+here instead of reaching the public handlers. Writes — issuing consumer tokens,
+authoring policies, revoking records — require the pod owner's admin token. Reads
+accept either administrative credential, but the engine's token is scoped to the
+record kinds the request path needs (``views/`` and ``tokens/``, which includes
+``tokens/policies/``); creation, deletion, and wholesale rewriting of system
+resources remain in the pod owner's hands.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF, XSD
 
-from app.auth.deps import get_admin_token
+from app.auth.deps import AdminTokenDep, StorageTokenDep
 from app.auth.tokens import mint_token, revoke_token
 from app.config import SettingsDep
 from app.ldp.deps import BackendDep
 from app.storage.backend import ResourceNotFound, StorageError
 from app.vocab import (
+    POD_EngineToken,
     POD_expiresAt,
     POD_maxRetrievals,
     POD_minInterval,
@@ -25,7 +29,9 @@ from app.vocab import (
     POD_validUntil,
 )
 
-router = APIRouter(prefix="/.system", tags=["system"], dependencies=[Depends(get_admin_token)])
+router = APIRouter(prefix="/.system", tags=["system"])
+
+_ENGINE_READABLE_PREFIXES = ("views/", "tokens/")
 
 
 class TokenIssueRequest(BaseModel):
@@ -62,6 +68,7 @@ def issue_token(
     request: Request,
     backend: BackendDep,
     body: TokenIssueRequest,
+    token: AdminTokenDep,
 ) -> TokenIssueResponse:
     plaintext, record_uri = mint_token(
         backend, request.app.state.system_ns, body.linked_view_uri
@@ -75,6 +82,7 @@ def write_policy(
     request: Request,
     backend: BackendDep,
     body: PolicyWriteRequest,
+    token: AdminTokenDep,
 ) -> PolicyWriteResponse:
     # A full PUT replaces the policy graph: omitted constraints are cleared, not merged.
     policy_uri = str(request.app.state.system_ns) + "tokens/policies/" + policy_id
@@ -96,7 +104,13 @@ def write_policy(
 
 
 @router.get("/{path:path}")
-def read_system(path: str, backend: BackendDep, settings: SettingsDep) -> Response:
+def read_system(
+    path: str, backend: BackendDep, settings: SettingsDep, token: StorageTokenDep
+) -> Response:
+    if token.token_type == str(POD_EngineToken) and not path.startswith(
+        _ENGINE_READABLE_PREFIXES
+    ):
+        raise HTTPException(status_code=403)
     uri = settings.base_uri + ".system/" + path
     try:
         graph = backend.read(uri)
@@ -106,7 +120,9 @@ def read_system(path: str, backend: BackendDep, settings: SettingsDep) -> Respon
 
 
 @router.delete("/{path:path}", status_code=204)
-def revoke_system(path: str, backend: BackendDep, settings: SettingsDep) -> Response:
+def revoke_system(
+    path: str, backend: BackendDep, settings: SettingsDep, token: AdminTokenDep
+) -> Response:
     uri = settings.base_uri + ".system/" + path
     try:
         revoke_token(backend, uri)
