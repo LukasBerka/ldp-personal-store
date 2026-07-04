@@ -12,6 +12,7 @@ from app import __version__
 from app.auth.router import router as system_router
 from app.auth.tokens import bootstrap_admin_token
 from app.config import check_tls_precondition, get_settings
+from app.discovery.router import router as discovery_router
 from app.ldp.router import router as ldp_router
 from app.sparql.router import router as sparql_router
 from app.storage.backend import ResourceNotFound, StorageBackend
@@ -85,7 +86,12 @@ app.include_router(views_router)
 app.include_router(system_router)
 # The consumer engine mounts before the LDP catch-all so /.engine/ requests are
 # adjudicated here instead of being swallowed by the public /{path:path} handlers.
+# The discovery/stats router shares the /.engine prefix and mounts right after the
+# engine so its distinct paths (/.engine/discovery, /.engine/stats) are matched
+# before the public /{path:path} LDP catch-all; they never collide with
+# /.engine/views/{view_id} or /.engine/blob/{view_id}.
 app.include_router(engine_router)
+app.include_router(discovery_router)
 app.include_router(ldp_router)
 
 
