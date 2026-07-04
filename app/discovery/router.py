@@ -13,8 +13,10 @@ from fastapi import APIRouter, Request, Response
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from app.auth.deps import ConsumerTokenDep
+from app.auth.deps import AdminTokenDep, ConsumerTokenDep
+from app.discovery.stats import StatsResponse, compute_stats
 from app.ldp.content import link_header
+from app.ldp.deps import BackendDep
 from app.vocab import (
     LDP_BasicContainer,
     LDP_Container,
@@ -52,3 +54,10 @@ def discover(request: Request, token: ConsumerTokenDep) -> Response:
             "Allow": "GET, HEAD, OPTIONS",
         },
     )
+
+
+@router.get("/stats")
+def stats(request: Request, backend: BackendDep, token: AdminTokenDep) -> StatsResponse:
+    # An owner management read over the access log, admin-gated and distinct from the
+    # consumer-facing discovery listing above.
+    return compute_stats(backend)
