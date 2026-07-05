@@ -47,14 +47,16 @@ def check_policy(
     record: TokenRecord,
     policy_graph: Graph | None,
     view_graph: Graph | None,
+    view_uri: str | None,
 ) -> None:
     """Enforce the access policy referenced by the token record.
 
     Returns normally when the request may proceed, and raises HTTPException(403)
     naming the violated constraint otherwise. *policy_graph* is None when the
     token carries no policy reference or the policy resource was never written —
-    such a grant carries no constraint and passes through. *view_graph* carries
-    the per-view ceiling and its counter when the token is scoped to a view.
+    such a grant carries no constraint and passes through. *view_graph* and
+    *view_uri* identify the requested view (a grant may unlock several), whose
+    record carries the per-view ceiling and its counter.
     """
     if policy_graph is None:
         return
@@ -97,8 +99,8 @@ def check_policy(
     # documented-acceptable TOCTOU window as the per-grant counter — the count read
     # here can race the post-delivery bump under concurrent requests, which is
     # tolerated for a single-user pod.
-    if view_graph is not None and record.linked_view_uri is not None:
-        view_subject = URIRef(record.linked_view_uri)
+    if view_graph is not None and view_uri is not None:
+        view_subject = URIRef(view_uri)
         view_limit = view_graph.value(view_subject, POD_maxViewRetrievals)
         if view_limit is not None:
             current = view_graph.value(view_subject, POD_viewRetrievalCount)

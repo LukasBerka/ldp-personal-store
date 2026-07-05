@@ -90,7 +90,7 @@ async def get_view(
     token: EngineConsumerDep,
 ) -> Response:
     view_uri = str(request.app.state.system_ns) + "views/" + view_id
-    if token.linked_view_uri != view_uri:
+    if view_uri not in token.linked_view_uris:
         raise HTTPException(status_code=403)
 
     graph, view = await _load_view(storage, view_uri)
@@ -101,7 +101,7 @@ async def get_view(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # Policy decision on the fully-validated request, before any data is produced.
-    check_policy(token, await _load_policy(storage, token.policy_ref), graph)
+    check_policy(token, await _load_policy(storage, token.policy_ref), graph, view_uri)
 
     result = await storage.construct(view.construct_template, bindings=bound)
 
@@ -127,7 +127,7 @@ async def get_blob(
     token: EngineConsumerDep,
 ) -> StreamingResponse:
     view_uri = str(request.app.state.system_ns) + "views/" + view_id
-    if token.linked_view_uri != view_uri:
+    if view_uri not in token.linked_view_uris:
         raise HTTPException(status_code=403)
 
     raw = request.query_params.get("uri")
@@ -150,7 +150,7 @@ async def get_blob(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # Policy decision on the fully-validated request, before any data is produced.
-    check_policy(token, await _load_policy(storage, token.policy_ref), graph)
+    check_policy(token, await _load_policy(storage, token.policy_ref), graph, view_uri)
 
     result = await storage.construct(view.construct_template, bindings=bound)
 

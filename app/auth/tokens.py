@@ -52,7 +52,9 @@ ASK { ?t a pod:AdminToken }
 class TokenRecord:
     token_uri: str
     token_type: str
-    linked_view_uri: str | None
+    # Every view this grant unlocks (one pod:linkedView triple each); empty for
+    # unscoped tokens such as the admin and engine credentials.
+    linked_view_uris: tuple[str, ...]
     policy_ref: str | None
     enforcement_count: int
     last_used_at: str
@@ -82,7 +84,7 @@ def _write_record(
     record_id: str,
     token_hash: str,
     token_type: URIRef,
-    linked_view_uri: str | None,
+    linked_view_uris: Sequence[str],
 ) -> str:
     token_uri = str(system_ns) + "tokens/" + record_id
     subject = URIRef(token_uri)
@@ -90,8 +92,8 @@ def _write_record(
     graph.add((subject, RDF.type, POD_Token))
     graph.add((subject, RDF.type, token_type))
     graph.add((subject, POD_tokenHash, Literal(token_hash, datatype=XSD.string)))
-    if linked_view_uri is not None:
-        graph.add((subject, POD_linkedView, URIRef(linked_view_uri)))
+    for view_uri in linked_view_uris:
+        graph.add((subject, POD_linkedView, URIRef(view_uri)))
     # policyRef is a stable placeholder: the record shape carries the field now so the
     # policy resource it points at can be created and enforced later without a rewrite.
     graph.add((subject, POD_policyRef, URIRef(str(system_ns) + "tokens/policies/" + record_id)))
@@ -104,19 +106,21 @@ def _write_record(
 def mint_token(
     backend: StorageBackend,
     system_ns: Namespace,
-    linked_view_uri: str | None = None,
+    linked_view_uris: Sequence[str] = (),
     token_type: URIRef = POD_ConsumerToken,
 ) -> tuple[str, str]:
     """Generate a bearer token, persist a hash-only record, and return (plaintext, uri).
 
-    The plaintext is the caller's single copy — it is never stored; only its SHA-256
-    hex digest is written to the record under ``.system/tokens/``.
+    A single grant may unlock any number of views — one ``pod:linkedView`` triple
+    per entry of *linked_view_uris*. The plaintext is the caller's single copy — it
+    is never stored; only its SHA-256 hex digest is written to the record under
+    ``.system/tokens/``.
     """
     plaintext = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(plaintext.encode()).hexdigest()
     record_id = _allocate_record_id(backend, system_ns)
     token_uri = _write_record(
-        backend, system_ns, record_id, token_hash, token_type, linked_view_uri
+        backend, system_ns, record_id, token_hash, token_type, linked_view_uris
     )
     return plaintext, token_uri
 
@@ -166,13 +170,13 @@ def validate_token_one_of(
     subject = URIRef(token_uri)
     record = backend.read(token_uri)
     count = record.value(subject, POD_enforcementCount)
-    view = record.value(subject, POD_linkedView)
+    views = tuple(sorted(str(v) for v in record.objects(subject, POD_linkedView)))
     policy = record.value(subject, POD_policyRef)
     last_used = record.value(subject, POD_lastUsedAt)
     return TokenRecord(
         token_uri=token_uri,
         token_type=str(matched_type),
-        linked_view_uri=str(view) if view is not None else None,
+        linked_view_uris=views,
         policy_ref=str(policy) if policy is not None else None,
         enforcement_count=int(str(count)) if count is not None else 0,
         last_used_at=str(last_used) if last_used is not None else _EPOCH,
@@ -214,7 +218,7 @@ def bootstrap_admin_token(
             "admin",
             hashlib.sha256(admin_token.encode()).hexdigest(),
             POD_AdminToken,
-            None,
+            (),
         )
         return None
     plaintext = secrets.token_urlsafe(32)
@@ -224,7 +228,7 @@ def bootstrap_admin_token(
         "admin",
         hashlib.sha256(plaintext.encode()).hexdigest(),
         POD_AdminToken,
-        None,
+        (),
     )
     return plaintext
 
@@ -250,6 +254,6 @@ def bootstrap_engine_token(
         "engine",
         hashlib.sha256(plaintext.encode()).hexdigest(),
         POD_EngineToken,
-        None,
+        (),
     )
     return plaintext

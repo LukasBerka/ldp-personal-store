@@ -35,7 +35,8 @@ _ENGINE_READABLE_PREFIXES = ("views/", "tokens/")
 
 
 class TokenIssueRequest(BaseModel):
-    linked_view_uri: str | None = None
+    # A single grant may unlock any number of views (FR4); empty means unscoped.
+    linked_view_uris: list[str] = []
 
 
 class TokenIssueResponse(BaseModel):
@@ -71,7 +72,7 @@ def issue_token(
     token: AdminTokenDep,
 ) -> TokenIssueResponse:
     plaintext, record_uri = mint_token(
-        backend, request.app.state.system_ns, body.linked_view_uri
+        backend, request.app.state.system_ns, body.linked_view_uris
     )
     return TokenIssueResponse(token=plaintext, record_uri=record_uri)
 

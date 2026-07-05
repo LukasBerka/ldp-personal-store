@@ -207,13 +207,13 @@ async def validate_via_storage(
         raise _unauthorized() from exc
     subject = URIRef(token_uri)
     count = record.value(subject, POD_enforcementCount)
-    view = record.value(subject, POD_linkedView)
+    views = tuple(sorted(str(v) for v in record.objects(subject, POD_linkedView)))
     policy = record.value(subject, POD_policyRef)
     last_used = record.value(subject, POD_lastUsedAt)
     return TokenRecord(
         token_uri=token_uri,
         token_type=str(required_type),
-        linked_view_uri=str(view) if view is not None else None,
+        linked_view_uris=views,
         policy_ref=str(policy) if policy is not None else None,
         enforcement_count=int(str(count)) if count is not None else 0,
         last_used_at=str(last_used) if last_used is not None else _EPOCH,
