@@ -1,14 +1,17 @@
-"""Rewrite upstream binary URIs in a view's CONSTRUCT result into gated proxy URLs.
+"""Rewrite upstream resource URIs in a view's CONSTRUCT result into gated proxy URLs.
 
-A view result may reference pod-local binary resources (``ldp:NonRDFSource``) by
-their raw storage URI. Handing those URIs to a consumer would let it point at
-storage directly, bypassing the token/policy boundary. :func:`rewrite_binary_uris`
-replaces every such URI — in both subject and object position — with an
-engine-namespace proxy URL that routes back through the gated blob endpoint.
+A view result may reference pod-local resources — RDF resources or binaries — by
+their raw storage URI. Storage is gated, so a raw URI is a dead link for a
+consumer; every URI that resolves to an upstream LDP resource is therefore
+replaced, in both subject and object position, with an engine-namespace proxy URL
+that dereferences through the gated blob endpoint under the same token, scope,
+and policy checks as the primary representation. URIs that resolve to nothing,
+blank nodes, and literals are copied through unchanged.
 
-Detection is injection-safe: the set of binary URIs is fetched from storage with a
-constant SPARQL query (no external input reaches the query text) and intersected
-locally with the URIs appearing in the pod's own CONSTRUCT output.
+Detection is injection-safe: the set of existing resource URIs is fetched from
+storage with a constant SPARQL query — each stored resource is a named graph
+context named by its URI, so no external input reaches the query text — and
+intersected locally with the URIs appearing in the pod's own CONSTRUCT output.
 """
 
 from urllib.parse import quote
@@ -18,12 +21,10 @@ from rdflib.term import Node
 
 from app.upstream import StorageClient
 
-_BINARY_SUBJECTS_QUERY = (
-    "PREFIX ldp: <http://www.w3.org/ns/ldp#> SELECT ?s WHERE { ?s a ldp:NonRDFSource }"
-)
+_RESOURCE_URIS_QUERY = "SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }"
 
 
-async def rewrite_binary_uris(
+async def rewrite_upstream_uris(
     graph: Graph,
     base_uri: str,
     engine_base: str,
@@ -31,13 +32,12 @@ async def rewrite_binary_uris(
     bound_params: dict[str, str],
     storage: StorageClient,
 ) -> Graph:
-    """Return a new graph with pod-local binary URIs rewritten to engine proxy URLs.
+    """Return a new graph with upstream resource URIs rewritten to engine proxy URLs.
 
     Every ``URIRef`` appearing as a subject or object that starts with *base_uri*
-    and is typed ``ldp:NonRDFSource`` is replaced by
-    ``{engine_base}blob/{view_id}?uri={upstream}&{bound_params}``. Non-binary URIs,
-    blank nodes, and literals are copied through unchanged, and the input *graph* is
-    never mutated.
+    and names an existing upstream resource is replaced by
+    ``{engine_base}blob/{view_id}?uri={upstream}&{bound_params}``. The input
+    *graph* is never mutated.
     """
     candidates: set[URIRef] = set()
     for subject, _, obj in graph:
@@ -47,10 +47,10 @@ async def rewrite_binary_uris(
     if not candidates:
         return graph
 
-    binaries = {row["s"] for row in await storage.select(_BINARY_SUBJECTS_QUERY)}
+    existing = {row["g"] for row in await storage.select(_RESOURCE_URIS_QUERY) if "g" in row}
     mapping: dict[URIRef, URIRef] = {}
     for uri in candidates:
-        if str(uri) in binaries:
+        if str(uri) in existing:
             # The original param bindings are re-encoded into the proxy URL so the
             # blob endpoint can re-run the identical CONSTRUCT to re-authorize access.
             pairs = {"uri": str(uri), **bound_params}

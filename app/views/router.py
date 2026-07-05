@@ -1,26 +1,30 @@
 """Admin-gated management router for stored view definitions.
 
-POST/PUT/DELETE under ``/.system/views`` mint, replace, and remove view records
-through the storage backend's system-write path, so a new or changed definition is
-live in the in-memory graph immediately with no restart. Definition-time validation
-rejects non-CONSTRUCT templates and param/template mismatches with 422. This router
-is mounted ahead of the ``.system/`` catch-all so these operations win route
-resolution while a GET of a view still falls through to the system Turtle reader.
+Views are LDP resources managed with the same verbs and representations as the
+pod owner's data: POST an RDF representation to ``/.system/views`` to create
+(``Slug`` honored), PUT one to ``/.system/views/{view_id}`` to replace, DELETE
+to remove; a GET of a view falls through to the system Turtle reader, and a GET
+of the ``/.system/views/`` container lists the catalog. A new or changed
+definition is live in the in-memory graph immediately with no restart.
+Definition-time validation rejects non-CONSTRUCT templates, param/template
+mismatches, and unsupported content-type hints with 422. This router is mounted
+ahead of the ``.system/`` catch-all so these operations win route resolution.
 """
 
 import secrets
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
-from pydantic import BaseModel
 
 from app.auth.deps import get_admin_token
 from app.ldp.containers import _sanitize_slug
-from app.ldp.deps import BackendDep
+from app.ldp.content import RDF_CONTENT_TYPES, parse_rdf_body
+from app.ldp.deps import BackendDep, RawBodyDep
 from app.storage.backend import ResourceNotFound, StorageBackend
 from app.views.model import (
-    ParamDecl,
+    ViewSubmission,
     check_params_against_template,
+    parse_view_submission,
     to_view_graph,
     validate_construct_template,
 )
@@ -28,32 +32,20 @@ from app.views.model import (
 router = APIRouter(prefix="/.system/views", tags=["views"], dependencies=[Depends(get_admin_token)])
 
 
-class ParamDeclRequest(BaseModel):
-    name: str
-    type: Literal["str", "int", "iri"]
-
-
-class ViewCreateRequest(BaseModel):
-    title: str
-    description: str = ""
-    construct_template: str
-    content_type_hint: Literal["text/turtle", "application/ld+json", "application/n-triples"] = (
-        "text/turtle"
-    )
-    params: list[ParamDeclRequest] = []
-    max_view_retrievals: int | None = None
-
-
-class ViewCreateResponse(BaseModel):
-    view_uri: str
-
-
-def _validate_or_422(template: str, decls: list[ParamDecl]) -> None:
+def _submission_or_422(body: bytes, content_type: str | None) -> ViewSubmission:
+    graph = parse_rdf_body(body, content_type)
     try:
-        validate_construct_template(template)
-        check_params_against_template(template, decls)
+        submission = parse_view_submission(graph)
+        validate_construct_template(submission.construct_template)
+        check_params_against_template(submission.construct_template, submission.params)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if submission.content_type_hint not in RDF_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"content-type hint must be one of {sorted(RDF_CONTENT_TYPES)}",
+        )
+    return submission
 
 
 def _mint_view_id(slug: str | None) -> str:
@@ -64,34 +56,37 @@ def _mint_view_id(slug: str | None) -> str:
     return secrets.token_urlsafe(8)
 
 
-def _build_and_store(backend: StorageBackend, view_uri: str, body: ViewCreateRequest) -> None:
-    decls = [ParamDecl(name=p.name, type=p.type) for p in body.params]
-    _validate_or_422(body.construct_template, decls)
-    graph = to_view_graph(
+def _store(backend: StorageBackend, view_uri: str, submission: ViewSubmission) -> Response:
+    stored = to_view_graph(
         view_uri,
-        body.title,
-        body.description,
-        body.construct_template,
-        body.content_type_hint,
-        decls,
-        max_view_retrievals=body.max_view_retrievals,
+        submission.title,
+        submission.description,
+        submission.construct_template,
+        submission.content_type_hint,
+        submission.params,
+        max_view_retrievals=submission.max_view_retrievals,
     )
-    backend.write_system(view_uri, graph)
+    backend.write_system(view_uri, stored)
+    return Response(
+        content=stored.serialize(format="turtle"),
+        media_type="text/turtle",
+        headers={"Location": view_uri},
+    )
 
 
 @router.post("", status_code=201)
 def create_view(
     request: Request,
     backend: BackendDep,
-    body: ViewCreateRequest,
-    response: Response,
+    body: RawBodyDep,
+    content_type: Annotated[str | None, Header()] = None,
     slug: Annotated[str | None, Header()] = None,
-) -> ViewCreateResponse:
-    view_id = _mint_view_id(slug)
-    view_uri = str(request.app.state.system_ns) + "views/" + view_id
-    _build_and_store(backend, view_uri, body)
-    response.headers["Location"] = view_uri
-    return ViewCreateResponse(view_uri=view_uri)
+) -> Response:
+    submission = _submission_or_422(body, content_type)
+    view_uri = str(request.app.state.system_ns) + "views/" + _mint_view_id(slug)
+    response = _store(backend, view_uri, submission)
+    response.status_code = 201
+    return response
 
 
 @router.put("/{view_id}")
@@ -99,11 +94,19 @@ def replace_view(
     view_id: str,
     request: Request,
     backend: BackendDep,
-    body: ViewCreateRequest,
-) -> ViewCreateResponse:
+    body: RawBodyDep,
+    content_type: Annotated[str | None, Header()] = None,
+) -> Response:
+    submission = _submission_or_422(body, content_type)
     view_uri = str(request.app.state.system_ns) + "views/" + view_id
-    _build_and_store(backend, view_uri, body)
-    return ViewCreateResponse(view_uri=view_uri)
+    try:
+        backend.read(view_uri)
+        exists = True
+    except ResourceNotFound:
+        exists = False
+    response = _store(backend, view_uri, submission)
+    response.status_code = 200 if exists else 201
+    return response
 
 
 @router.delete("/{view_id}", status_code=204)

@@ -54,6 +54,71 @@ class ViewRecord(BaseModel):
     params: list[ParamDecl]
 
 
+class ViewSubmission(BaseModel):
+    """A view definition as extracted from a client-submitted RDF representation."""
+
+    title: str
+    description: str
+    construct_template: str
+    content_type_hint: str
+    params: list[ParamDecl]
+    max_view_retrievals: int | None
+
+
+def parse_view_submission(graph: Graph) -> ViewSubmission:
+    """Extract a view definition from a client-submitted RDF graph.
+
+    Exactly one subject typed ``pod:View`` is required; its properties are read by
+    predicate, so the client's choice of subject term — a null relative URI, a
+    placeholder URN, or the final resource URI on a GET-edit-PUT roundtrip — is
+    irrelevant. Server-managed triples (the retrieval counter) are ignored.
+    Raises ValueError on a missing or ambiguous subject, an absent title or
+    template, an ill-typed parameter declaration, or a non-integer ceiling;
+    callers translate the ValueError into 422.
+    """
+    subjects = list(graph.subjects(RDF.type, POD_View))
+    if len(subjects) != 1:
+        raise ValueError("Body must describe exactly one pod:View resource")
+    subject = subjects[0]
+
+    title = graph.value(subject, DC_title)
+    if title is None:
+        raise ValueError("Missing dcterms:title")
+    template = graph.value(subject, POD_constructTemplate)
+    if template is None:
+        raise ValueError("Missing pod:constructTemplate")
+    hint = graph.value(subject, POD_contentTypeHint)
+
+    params: list[ParamDecl] = []
+    for pnode in graph.objects(subject, POD_parameter):
+        try:
+            params.append(
+                ParamDecl.model_validate(
+                    {
+                        "name": _value_str(graph, pnode, POD_paramName),
+                        "type": _value_str(graph, pnode, POD_paramType),
+                    }
+                )
+            )
+        except ValidationError as exc:
+            raise ValueError(f"Invalid parameter declaration: {exc}") from exc
+
+    ceiling = graph.value(subject, POD_maxViewRetrievals)
+    try:
+        max_view_retrievals = int(str(ceiling)) if ceiling is not None else None
+    except ValueError as exc:
+        raise ValueError("pod:maxViewRetrievals must be an integer") from exc
+
+    return ViewSubmission(
+        title=str(title),
+        description=_value_str(graph, subject, DC_description),
+        construct_template=str(template),
+        content_type_hint=str(hint) if hint is not None else "text/turtle",
+        params=params,
+        max_view_retrievals=max_view_retrievals,
+    )
+
+
 def validate_construct_template(template: str) -> None:
     """Raise ValueError unless *template* is syntactically valid SPARQL CONSTRUCT.
 

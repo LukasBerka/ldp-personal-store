@@ -42,6 +42,7 @@ _RDF_FORMATS: dict[str, str] = {
     "text/turtle": "turtle",
     "application/ld+json": "json-ld",
     "application/n-triples": "nt",
+    "application/rdf+xml": "xml",
 }
 
 

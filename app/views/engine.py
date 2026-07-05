@@ -14,12 +14,14 @@ loads are LDP GETs, queries go to the SPARQL Protocol endpoint (parameters as
 the storage server's enforcement endpoints. The engine touches no backend state
 directly, so revoking the engine's token cuts it off from the pod entirely.
 
-``GET /.engine/blob/{view_id}`` is the gated proxy for the binary URIs the primary
-handler rewrites. It re-validates the same consumer token and scope, guards the
-decoded upstream URI against open-proxy abuse, re-runs the view's CONSTRUCT to
-confirm the binary is still in-result, and only then streams the upstream bytes
-with the Content-Type the storage LDP surface reports — so a consumer reaches a
-shared binary exclusively through this re-authorized path, never storage directly.
+``GET /.engine/blob/{view_id}`` is the gated proxy for the upstream resource URIs
+the primary handler rewrites — binaries and RDF resources alike. It re-validates
+the same consumer token and scope, guards the decoded upstream URI against
+open-proxy abuse, re-runs the view's CONSTRUCT to confirm the URI is still in the
+current result (in subject or object position), and only then streams the
+upstream bytes with the Content-Type the storage LDP surface reports — so a
+consumer reaches a shared resource exclusively through this re-authorized path,
+never storage directly.
 """
 
 from datetime import UTC, datetime
@@ -34,8 +36,8 @@ from app.config import get_settings
 from app.ldp.content import rdflib_format_for
 from app.policy.enforce import check_policy
 from app.upstream import EngineConsumerDep, StorageClient, StorageDep, UpstreamNotFound
-from app.views.binary import rewrite_binary_uris
 from app.views.model import ViewRecord, bind_params, parse_view_record
+from app.views.rewrite import rewrite_upstream_uris
 from app.vocab import POD_viewRetrievalCount
 
 router = APIRouter(prefix="/.engine", tags=["engine"])
@@ -105,11 +107,11 @@ async def get_view(
 
     result = await storage.construct(view.construct_template, bindings=bound)
 
-    # Replace raw storage URIs of shared binaries with gated engine proxy URLs so the
-    # consumer never dereferences pod storage directly.
+    # Replace raw storage URIs of shared resources with gated engine proxy URLs so
+    # the consumer follows every reference through the engine, never storage directly.
     engine_base = str(request.app.state.engine_ns)
     base_uri = get_settings().base_uri
-    out_graph = await rewrite_binary_uris(result, base_uri, engine_base, view_id, bound, storage)
+    out_graph = await rewrite_upstream_uris(result, base_uri, engine_base, view_id, bound, storage)
 
     body = out_graph.serialize(format=rdflib_format_for(view.content_type_hint), encoding="utf-8")
 
@@ -154,9 +156,16 @@ async def get_blob(
 
     result = await storage.construct(view.construct_template, bindings=bound)
 
-    # A stale proxy URL — the binary is no longer produced by the view — is unreachable.
-    subjects = {str(s) for s in result.subjects() if isinstance(s, URIRef)}
-    if upstream_uri not in subjects:
+    # A stale proxy URL — the resource is no longer produced by the view — is
+    # unreachable. Membership means appearing anywhere the rewrite step looks:
+    # subject or object position of the current result.
+    result_terms = {
+        str(term)
+        for subject, _, obj in result
+        for term in (subject, obj)
+        if isinstance(term, URIRef)
+    }
+    if upstream_uri not in result_terms:
         raise HTTPException(status_code=404)
 
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

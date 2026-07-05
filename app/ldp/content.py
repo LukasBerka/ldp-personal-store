@@ -22,11 +22,10 @@ SUPPORTED: list[tuple[str, str]] = [
     ("text/turtle", "turtle"),
     ("application/ld+json", "json-ld"),
     ("application/n-triples", "nt"),
+    ("application/rdf+xml", "xml"),
 ]
 
-RDF_CONTENT_TYPES: frozenset[str] = frozenset(
-    {"text/turtle", "application/ld+json", "application/n-triples"}
-)
+RDF_CONTENT_TYPES: frozenset[str] = frozenset(media_type for media_type, _ in SUPPORTED)
 
 _FORMAT_BY_CONTENT_TYPE: dict[str, str] = dict(SUPPORTED)
 
@@ -64,6 +63,23 @@ def rdflib_format_for(content_type: str) -> str:
 
 def serialize_graph(graph: Graph, fmt: str) -> str:
     return graph.serialize(format=fmt)
+
+
+def parse_rdf_body(body: bytes, content_type: str | None) -> Graph:
+    """Parse a request body as RDF, or raise 415 (non-RDF type) / 400 (bad syntax).
+
+    The shared guard for management routes that accept RDF representations, so the
+    system surface admits exactly the same serializations as the LDP data plane.
+    """
+    normalized = (content_type or "").split(";")[0].strip().lower()
+    if normalized not in RDF_CONTENT_TYPES:
+        raise HTTPException(status_code=415)
+    graph = Graph()
+    try:
+        graph.parse(data=body, format=_FORMAT_BY_CONTENT_TYPE[normalized])
+    except Exception as exc:  # rdflib parse errors span several exception types
+        raise HTTPException(status_code=400, detail=f"Invalid RDF body: {exc}") from exc
+    return graph
 
 
 def etag_for_graph(graph: Graph) -> str:
