@@ -7,7 +7,7 @@ use (or a 406 when nothing acceptable matches), derives stable ETags, builds
 """
 
 import hashlib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from fastapi import HTTPException
 from rdflib import Graph
@@ -27,28 +27,47 @@ SUPPORTED: list[tuple[str, str]] = [
 
 RDF_CONTENT_TYPES: frozenset[str] = frozenset(media_type for media_type, _ in SUPPORTED)
 
-_FORMAT_BY_CONTENT_TYPE: dict[str, str] = dict(SUPPORTED)
+FORMAT_BY_CONTENT_TYPE: dict[str, str] = dict(SUPPORTED)
 
 ALLOW_RDF = "GET, HEAD, PUT, DELETE, OPTIONS"
 ALLOW_CONTAINER = "GET, HEAD, POST, PUT, DELETE, OPTIONS"
 ALLOW_BINARY = "GET, HEAD, PUT, DELETE, OPTIONS"
 
 
-def negotiate(accept: str | None) -> tuple[str, str]:
-    """Return ``(rdflib_format, media_type)`` for the best match of *accept*.
+def normalize_media_type(value: str | None, default: str = "") -> str:
+    """Strip parameters (``;charset=...``), whitespace, and case from a media type.
 
-    Defaults to Turtle for a missing/empty header or ``*/*``; raises 406 when the
-    header is present but names no supported RDF media type.
+    A missing or empty header value yields *default*.
     """
-    if not accept or accept == "*/*":
-        return "turtle", "text/turtle"
-    for media_type, fmt in SUPPORTED:
-        if media_type in accept:
-            return fmt, media_type
-    raise HTTPException(
-        status_code=406,
-        detail=f"None of {[media_type for media_type, _ in SUPPORTED]} acceptable",
-    )
+    if not value:
+        return default
+    return value.split(";")[0].strip().lower() or default
+
+
+def negotiate_media(
+    accept: str | None, formats: Mapping[str, str], default_media: str
+) -> tuple[str, str]:
+    """Return ``(media_type, serializer_format)`` for the best entry of *accept*.
+
+    Entries are matched in the client's listed order after stripping parameters;
+    q-values are not weighed. A missing/empty header or a ``*/*`` entry selects
+    *default_media*. Raises 406 when the header names no supported media type.
+    """
+    if not accept:
+        return default_media, formats[default_media]
+    for entry in accept.split(","):
+        media_type = normalize_media_type(entry)
+        if media_type == "*/*":
+            return default_media, formats[default_media]
+        if media_type in formats:
+            return media_type, formats[media_type]
+    raise HTTPException(status_code=406, detail=f"None of {sorted(formats)} acceptable")
+
+
+def negotiate(accept: str | None) -> tuple[str, str]:
+    """Return ``(rdflib_format, media_type)`` for the best RDF match of *accept*."""
+    media_type, fmt = negotiate_media(accept, FORMAT_BY_CONTENT_TYPE, "text/turtle")
+    return fmt, media_type
 
 
 def rdflib_format_for(content_type: str) -> str:
@@ -57,12 +76,7 @@ def rdflib_format_for(content_type: str) -> str:
     Parameters such as ``charset`` are stripped before lookup. The caller must
     confirm the type is in :data:`RDF_CONTENT_TYPES` first.
     """
-    normalized = content_type.split(";")[0].strip().lower()
-    return _FORMAT_BY_CONTENT_TYPE[normalized]
-
-
-def serialize_graph(graph: Graph, fmt: str) -> str:
-    return graph.serialize(format=fmt)
+    return FORMAT_BY_CONTENT_TYPE[normalize_media_type(content_type)]
 
 
 def parse_rdf_body(body: bytes, content_type: str | None) -> Graph:
@@ -71,12 +85,12 @@ def parse_rdf_body(body: bytes, content_type: str | None) -> Graph:
     The shared guard for management routes that accept RDF representations, so the
     system surface admits exactly the same serializations as the LDP data plane.
     """
-    normalized = (content_type or "").split(";")[0].strip().lower()
+    normalized = normalize_media_type(content_type)
     if normalized not in RDF_CONTENT_TYPES:
         raise HTTPException(status_code=415)
     graph = Graph()
     try:
-        graph.parse(data=body, format=_FORMAT_BY_CONTENT_TYPE[normalized])
+        graph.parse(data=body, format=FORMAT_BY_CONTENT_TYPE[normalized])
     except Exception as exc:  # rdflib parse errors span several exception types
         raise HTTPException(status_code=400, detail=f"Invalid RDF body: {exc}") from exc
     return graph

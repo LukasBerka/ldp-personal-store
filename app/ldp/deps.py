@@ -1,15 +1,33 @@
-"""FastAPI dependencies shared by the storage server's HTTP routers.
+"""FastAPI dependencies and helpers shared by the storage server's HTTP routers.
 
 The backend is constructed once in the app lifespan and stored on
 ``app.state``; route handlers receive it through :data:`BackendDep` rather than
-reaching into application state directly.
+reaching into application state directly. :func:`http_error` is the single
+storage-exception-to-HTTP translation every router uses.
 """
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 
-from app.storage.backend import StorageBackend
+from app.storage.backend import (
+    NotABinaryResource,
+    PrefixViolation,
+    ResourceNotFound,
+    StorageBackend,
+    StorageError,
+)
+
+
+def http_error(exc: StorageError) -> HTTPException:
+    """Translate a storage-layer exception into its HTTP equivalent."""
+    if isinstance(exc, ResourceNotFound):
+        return HTTPException(status_code=404)
+    if isinstance(exc, PrefixViolation):
+        return HTTPException(status_code=403)
+    if isinstance(exc, NotABinaryResource):
+        return HTTPException(status_code=409)
+    return HTTPException(status_code=500)
 
 
 def get_backend(request: Request) -> StorageBackend:

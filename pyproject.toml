@@ -1,7 +1,7 @@
 [project]
 name = "app"
 version = "0.1.0"
-description = ""
+description = "Personal LDP pod: share query-defined slices of your data under revocable, policy-bounded credentials"
 readme = "README.md"
 authors = [
     { name = "LukasBerka", email = "lukasberkacek@gmail.com" }
@@ -40,3 +40,11 @@ python-version = "3.13"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+filterwarnings = [
+    # rdflib 7.6's own SPARQL evaluator and JSON-LD parser still call deprecated
+    # Dataset/ConjunctiveGraph APIs internally; app code uses only supported API.
+    # Module-scoped to rdflib so the same deprecations in app code stay visible.
+    "ignore:Dataset.contexts is deprecated:DeprecationWarning:rdflib",
+    "ignore:Dataset.default_context is deprecated:DeprecationWarning:rdflib",
+    "ignore:ConjunctiveGraph is deprecated:DeprecationWarning:rdflib",
+]

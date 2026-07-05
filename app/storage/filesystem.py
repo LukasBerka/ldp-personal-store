@@ -1,10 +1,10 @@
-"""Filesystem-backed :class:`StorageBackend` over an in-memory rdflib graph.
+"""Filesystem-backed :class:`StorageBackend` over an in-memory rdflib dataset.
 
 RDF resources are Turtle files; binary resources are raw bytes plus a Turtle
 metadata sidecar. On construction the backend walks ``storage_root`` and rebuilds
-a :class:`~rdflib.ConjunctiveGraph` holding one named graph per resource URI, so a
-fresh instance reconstructs the same state from disk. Disk stays authoritative:
-each write/delete updates the named graph incrementally rather than rebuilding.
+a :class:`~rdflib.Dataset` holding one named graph per resource URI, so a fresh
+instance reconstructs the same state from disk. Disk stays authoritative: each
+write/delete updates the named graph incrementally rather than rebuilding.
 """
 
 import re
@@ -12,7 +12,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
-from rdflib import ConjunctiveGraph, Graph, Literal, URIRef
+from rdflib import Dataset, Graph, Literal, URIRef
 from rdflib.namespace import RDF, XSD
 from rdflib.query import Result
 
@@ -77,10 +77,12 @@ class FilesystemBackend:
     def __init__(self, storage_root: Path, base_uri: str) -> None:
         self._storage_root = storage_root
         self._base_uri = base_uri
-        # ConjunctiveGraph is not thread-safe; this guards every read-modify-write
+        # The Dataset is not thread-safe; this guards every read-modify-write
         # so concurrent threadpool requests cannot corrupt the in-memory store.
         self._lock = threading.RLock()
-        self._graph = ConjunctiveGraph()
+        # default_union makes queries see the union of all named graphs, so a
+        # plain `?s ?p ?o` pattern reaches every resource without a GRAPH wrapper.
+        self._graph = Dataset(default_union=True)
         storage_root.mkdir(parents=True, exist_ok=True)
         ensure_system_subtree(storage_root)
         with self._lock:
@@ -93,7 +95,7 @@ class FilesystemBackend:
                     uri = _meta_path_to_uri(path, storage_root, base_uri)
                 else:
                     uri = _path_to_uri(path, storage_root, base_uri)
-                context = self._graph.get_context(URIRef(uri))
+                context = self._graph.graph(URIRef(uri))
                 context.parse(data=path.read_text(encoding="utf-8"), format="turtle")
 
     def read(self, uri: str) -> Graph:
@@ -105,8 +107,8 @@ class FilesystemBackend:
             if not path.exists():
                 raise ResourceNotFound(uri)
             # Copy out of the named-graph context so callers never hold a live
-            # reference into the shared ConjunctiveGraph store.
-            for triple in self._graph.get_context(URIRef(uri)):
+            # reference into the shared Dataset store.
+            for triple in self._graph.graph(URIRef(uri)):
                 result.add(triple)
         return result
 
@@ -124,8 +126,8 @@ class FilesystemBackend:
         with self._lock:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(serialized, encoding="utf-8")
-            self._graph.remove_context(self._graph.get_context(URIRef(uri)))
-            self._graph.get_context(URIRef(uri)).parse(
+            self._graph.remove_graph(self._graph.graph(URIRef(uri)))
+            self._graph.graph(URIRef(uri)).parse(
                 data=path.read_text(encoding="utf-8"), format="turtle"
             )
 
@@ -145,8 +147,8 @@ class FilesystemBackend:
             # Raw bytes live only on disk; the graph holds the metadata sidecar.
             bin_path.write_bytes(data)
             meta_path.write_text(serialized, encoding="utf-8")
-            self._graph.remove_context(self._graph.get_context(subject))
-            self._graph.get_context(subject).parse(
+            self._graph.remove_graph(self._graph.graph(subject))
+            self._graph.graph(subject).parse(
                 data=meta_path.read_text(encoding="utf-8"), format="turtle"
             )
 
@@ -174,7 +176,7 @@ class FilesystemBackend:
                 meta_path.unlink(missing_ok=True)
             else:
                 raise ResourceNotFound(uri)
-            self._graph.remove_context(self._graph.get_context(URIRef(uri)))
+            self._graph.remove_graph(self._graph.graph(URIRef(uri)))
 
     def update_enforcement(self, uri: str, count: int, last_used_at: str) -> None:
         subject = URIRef(uri)
@@ -184,7 +186,7 @@ class FilesystemBackend:
             # untouched. write_system re-acquires _lock, which the reentrant RLock
             # permits, so the whole read-modify-write stays a single atomic section.
             graph = Graph()
-            for triple in self._graph.get_context(subject):
+            for triple in self._graph.graph(subject):
                 graph.add(triple)
             graph.remove((subject, POD_enforcementCount, None))
             graph.remove((subject, POD_lastUsedAt, None))
@@ -201,7 +203,7 @@ class FilesystemBackend:
             # single atomic section. A record lacking the counter is handled naturally:
             # remove is a no-op and the triple is created.
             graph = Graph()
-            for triple in self._graph.get_context(subject):
+            for triple in self._graph.graph(subject):
                 graph.add(triple)
             graph.remove((subject, POD_viewRetrievalCount, None))
             graph.add((subject, POD_viewRetrievalCount, Literal(count, datatype=XSD.integer)))
@@ -225,7 +227,7 @@ class FilesystemBackend:
         bindings = None
         if init_bindings is not None:
             bindings = {var: _to_term(value) for var, value in init_bindings.items()}
-        # ConjunctiveGraph queries the union of all named graphs, so a plain
-        # `?s ?p ?o` pattern sees every resource without a GRAPH wrapper.
+        # The Dataset was built with default_union, so a plain `?s ?p ?o` pattern
+        # sees every resource without a GRAPH wrapper.
         with self._lock:
             return self._graph.query(sparql, initBindings=bindings)

@@ -15,34 +15,21 @@ storage-side validator does.
 """
 
 import hashlib
-import hmac
 from typing import Annotated
 
 import httpx
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, Request
 from rdflib import Graph, URIRef
 
 from app.auth.deps import require_bearer
-from app.auth.tokens import TokenRecord
-from app.vocab import (
-    POD_AdminToken,
-    POD_ConsumerToken,
-    POD_enforcementCount,
-    POD_lastUsedAt,
-    POD_linkedView,
-    POD_policyRef,
+from app.auth.tokens import (
+    LOOKUP_QUERY,
+    TokenRecord,
+    match_token_rows,
+    token_record_from_graph,
+    unauthorized,
 )
-
-_EPOCH = "1970-01-01T00:00:00Z"
-
-_LOOKUP_QUERY = """
-PREFIX pod: <urn:pod:vocab:>
-SELECT ?tokenUri ?stored ?tokenType WHERE {
-    ?tokenUri pod:tokenHash ?stored ;
-              a ?tokenType .
-    FILTER(str(?stored) = str(?presented))
-}
-"""
+from app.vocab import POD_AdminToken, POD_ConsumerToken
 
 
 class UpstreamError(Exception):
@@ -159,12 +146,6 @@ class StorageClient:
         self._expect(response, 204)
 
 
-def _unauthorized() -> HTTPException:
-    # Identical 401 for every failure mode, mirroring the storage-side validator, so
-    # a caller can never distinguish "no such token" from "valid but wrong type".
-    return HTTPException(status_code=401, headers={"WWW-Authenticate": "Bearer"})
-
-
 async def validate_via_storage(
     storage: StorageClient,
     raw_token: str,
@@ -172,52 +153,20 @@ async def validate_via_storage(
 ) -> TokenRecord:
     """Resolve a token presented to the engine through the storage HTTP surface.
 
-    Hashes the presented token, finds the record by hash over the SPARQL endpoint,
-    reads the record over the system surface, confirms the hash in constant time,
-    and requires *required_type* among the record's markers — every failure raises
-    the same 401.
+    Hashes the presented token, finds candidate records by digest over the SPARQL
+    endpoint, requires *required_type* among the matching record's markers, and
+    reads the record over the system surface — every failure raises the same 401.
+    The matching and record-assembly steps are the storage-side validator's own
+    helpers, so the two validators cannot drift.
     """
     presented_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    rows = await storage.select(_LOOKUP_QUERY, bindings={"presented": presented_hash})
-    if not rows:
-        raise _unauthorized()
-
-    # One row per rdf:type triple: collapse them into the record's identity plus the
-    # full set of its type markers.
-    stored_hash: str | None = None
-    token_uri: str | None = None
-    types: set[str] = set()
-    for row in rows:
-        stored_hash = row.get("stored", stored_hash)
-        token_uri = row.get("tokenUri", token_uri)
-        marker = row.get("tokenType")
-        if marker is not None:
-            types.add(marker)
-
-    if stored_hash is None or token_uri is None:
-        raise _unauthorized()
-    if not hmac.compare_digest(presented_hash, stored_hash):
-        raise _unauthorized()
-    if str(required_type) not in types:
-        raise _unauthorized()
-
+    rows = await storage.select(LOOKUP_QUERY, bindings={"presented": presented_hash})
+    token_uri, matched_type = match_token_rows(rows, presented_hash, (required_type,))
     try:
         record = await storage.read_graph(token_uri)
     except UpstreamNotFound as exc:
-        raise _unauthorized() from exc
-    subject = URIRef(token_uri)
-    count = record.value(subject, POD_enforcementCount)
-    views = tuple(sorted(str(v) for v in record.objects(subject, POD_linkedView)))
-    policy = record.value(subject, POD_policyRef)
-    last_used = record.value(subject, POD_lastUsedAt)
-    return TokenRecord(
-        token_uri=token_uri,
-        token_type=str(required_type),
-        linked_view_uris=views,
-        policy_ref=str(policy) if policy is not None else None,
-        enforcement_count=int(str(count)) if count is not None else 0,
-        last_used_at=str(last_used) if last_used is not None else _EPOCH,
-    )
+        raise unauthorized() from exc
+    return token_record_from_graph(record, token_uri, matched_type)
 
 
 def get_storage(request: Request) -> StorageClient:

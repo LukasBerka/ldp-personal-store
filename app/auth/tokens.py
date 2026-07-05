@@ -2,19 +2,25 @@
 
 Tokens are random URL-safe strings; only their SHA-256 hex digests are persisted
 as RDF under ``.system/tokens/``. The plaintext is returned to the caller exactly
-once at mint time and never enters the graph or touches disk. Validation hashes the
-presented token, looks the record up by hash, and confirms the match in constant
-time so a diverging comparison cannot leak through response latency.
+once at mint time and never enters the graph or touches disk. Validation hashes
+the presented token and resolves the record by digest equality; only digests of
+high-entropy random tokens are ever compared, so equality checks reveal nothing
+useful about any plaintext.
+
+The pure pieces of validation — the hash-lookup query, grouping the lookup rows
+into candidate records, and assembling a :class:`TokenRecord` from a record graph
+— are shared with the engine-side validator in :mod:`app.upstream`, which runs
+the same steps over the storage HTTP boundary instead of the backend.
 """
 
 import hashlib
 import hmac
 import secrets
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from fastapi import HTTPException
-from rdflib import Graph, Literal, Namespace, URIRef, Variable
+from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF, XSD
 
 from app.storage.backend import ResourceNotFound, StorageBackend
@@ -31,9 +37,9 @@ from app.vocab import (
 )
 
 # Unix epoch: the initial lastUsedAt before any successful delivery bumps it.
-_EPOCH = "1970-01-01T00:00:00Z"
+EPOCH = "1970-01-01T00:00:00Z"
 
-_LOOKUP_QUERY = """
+LOOKUP_QUERY = """
 PREFIX pod: <urn:pod:vocab:>
 SELECT ?tokenUri ?stored ?tokenType WHERE {
     ?tokenUri pod:tokenHash ?stored ;
@@ -60,10 +66,64 @@ class TokenRecord:
     last_used_at: str
 
 
-def _unauthorized() -> HTTPException:
+def unauthorized() -> HTTPException:
     # Missing, invalid, revoked, and wrong-type tokens all raise this identical 401
     # so a caller can never distinguish "no such token" from "valid but wrong type".
     return HTTPException(status_code=401, headers={"WWW-Authenticate": "Bearer"})
+
+
+def match_token_rows(
+    rows: Iterable[Mapping[str, str]],
+    presented_hash: str,
+    allowed_types: Sequence[URIRef],
+) -> tuple[str, URIRef]:
+    """Resolve hash-lookup rows to ``(token_uri, matched_type)`` or raise the 401.
+
+    One row arrives per rdf:type triple. Rows are grouped by ``tokenUri`` before
+    anything is compared, so two records that happen to carry the same hash (the
+    same plaintext seeded twice) can never mix one record's identity with
+    another's type markers. The first candidate record — in sorted-URI order, for
+    determinism — whose hash matches and whose markers include one of
+    *allowed_types* wins; no candidate means the indistinguishable 401.
+    """
+    types_by_uri: dict[str, set[str]] = {}
+    hash_by_uri: dict[str, str] = {}
+    for row in rows:
+        uri = row.get("tokenUri")
+        if uri is None:
+            continue
+        stored = row.get("stored")
+        if stored is not None:
+            hash_by_uri[uri] = stored
+        marker = row.get("tokenType")
+        if marker is not None:
+            types_by_uri.setdefault(uri, set()).add(marker)
+
+    for uri in sorted(types_by_uri):
+        stored_hash = hash_by_uri.get(uri)
+        if stored_hash is None or not hmac.compare_digest(presented_hash, stored_hash):
+            continue
+        matched = next((t for t in allowed_types if str(t) in types_by_uri[uri]), None)
+        if matched is not None:
+            return uri, matched
+    raise unauthorized()
+
+
+def token_record_from_graph(graph: Graph, token_uri: str, token_type: URIRef) -> TokenRecord:
+    """Assemble a :class:`TokenRecord` from the record's stored triples."""
+    subject = URIRef(token_uri)
+    count = graph.value(subject, POD_enforcementCount)
+    views = tuple(sorted(str(v) for v in graph.objects(subject, POD_linkedView)))
+    policy = graph.value(subject, POD_policyRef)
+    last_used = graph.value(subject, POD_lastUsedAt)
+    return TokenRecord(
+        token_uri=token_uri,
+        token_type=str(token_type),
+        linked_view_uris=views,
+        policy_ref=str(policy) if policy is not None else None,
+        enforcement_count=int(str(count)) if count is not None else 0,
+        last_used_at=str(last_used) if last_used is not None else EPOCH,
+    )
 
 
 def _allocate_record_id(backend: StorageBackend, system_ns: Namespace) -> str:
@@ -98,7 +158,7 @@ def _write_record(
     # policy resource it points at can be created and enforced later without a rewrite.
     graph.add((subject, POD_policyRef, URIRef(str(system_ns) + "tokens/policies/" + record_id)))
     graph.add((subject, POD_enforcementCount, Literal(0, datatype=XSD.integer)))
-    graph.add((subject, POD_lastUsedAt, Literal(_EPOCH, datatype=XSD.dateTime)))
+    graph.add((subject, POD_lastUsedAt, Literal(EPOCH, datatype=XSD.dateTime)))
     backend.write_system(token_uri, graph)
     return token_uri
 
@@ -132,55 +192,20 @@ def validate_token_one_of(
 ) -> TokenRecord:
     """Resolve *raw_token* to its record, or raise an indistinguishable 401.
 
-    Hashes the presented token, looks the record up by hash, confirms the match with
-    a constant-time compare, and requires at least one of *allowed_types* among the
-    record's rdf:type markers; the first match becomes the record's reported type.
+    Hashes the presented token, looks candidate records up by digest, and requires
+    at least one of *allowed_types* among the matching record's rdf:type markers.
     Every failure — not found, revoked, hash mismatch, wrong type — raises the same
     401 body so validity and type never leak.
     """
     presented_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    rows = backend.query(_LOOKUP_QUERY, init_bindings={"presented": presented_hash}).bindings
-    if not rows:
-        raise _unauthorized()
-
-    # One row per rdf:type triple: collapse them into the record's identity plus the
-    # full set of its type markers.
-    stored_hash: str | None = None
-    token_uri: str | None = None
-    types: set[str] = set()
-    for row in rows:
-        stored = row.get(Variable("stored"))
-        if stored is not None:
-            stored_hash = str(stored)
-        uri = row.get(Variable("tokenUri"))
-        if uri is not None:
-            token_uri = str(uri)
-        marker = row.get(Variable("tokenType"))
-        if marker is not None:
-            types.add(str(marker))
-
-    if stored_hash is None or token_uri is None:
-        raise _unauthorized()
-    if not hmac.compare_digest(presented_hash, stored_hash):
-        raise _unauthorized()
-    matched_type = next((t for t in allowed_types if str(t) in types), None)
-    if matched_type is None:
-        raise _unauthorized()
-
-    subject = URIRef(token_uri)
-    record = backend.read(token_uri)
-    count = record.value(subject, POD_enforcementCount)
-    views = tuple(sorted(str(v) for v in record.objects(subject, POD_linkedView)))
-    policy = record.value(subject, POD_policyRef)
-    last_used = record.value(subject, POD_lastUsedAt)
-    return TokenRecord(
-        token_uri=token_uri,
-        token_type=str(matched_type),
-        linked_view_uris=views,
-        policy_ref=str(policy) if policy is not None else None,
-        enforcement_count=int(str(count)) if count is not None else 0,
-        last_used_at=str(last_used) if last_used is not None else _EPOCH,
-    )
+    result = backend.query(LOOKUP_QUERY, init_bindings={"presented": presented_hash})
+    rows = [{str(var): str(term) for var, term in row.items()} for row in result.bindings]
+    token_uri, matched_type = match_token_rows(rows, presented_hash, allowed_types)
+    try:
+        record = backend.read(token_uri)
+    except ResourceNotFound as exc:
+        raise unauthorized() from exc
+    return token_record_from_graph(record, token_uri, matched_type)
 
 
 def validate_token(

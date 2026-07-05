@@ -16,7 +16,6 @@ creation, deletion, and wholesale rewriting of system resources remain in the
 pod owner's hands.
 """
 
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
@@ -27,7 +26,8 @@ from app.auth.deps import AdminTokenDep, StorageTokenDep
 from app.auth.tokens import mint_token, revoke_token
 from app.config import Settings, SettingsDep
 from app.ldp.content import link_header, parse_rdf_body
-from app.ldp.deps import BackendDep, RawBodyDep
+from app.ldp.deps import BackendDep, RawBodyDep, http_error
+from app.policy.enforce import parse_xsd_datetime
 from app.storage.backend import ResourceNotFound, StorageBackend, StorageError
 from app.vocab import (
     LDP_BasicContainer,
@@ -71,19 +71,12 @@ _POLICY_CONSTRAINTS: tuple[tuple[URIRef, URIRef], ...] = (
 )
 
 
-def _http_error(exc: StorageError) -> HTTPException:
-    if isinstance(exc, ResourceNotFound):
-        return HTTPException(status_code=404)
-    return HTTPException(status_code=500)
-
-
 def _validate_constraint(value: str, datatype: URIRef) -> None:
     """Raise ValueError unless *value* is a lexical form the enforcement layer can read."""
     if datatype == XSD.integer:
         int(value)
     else:
-        normalized = f"{value[:-1]}+00:00" if value.endswith("Z") else value
-        datetime.fromisoformat(normalized)
+        parse_xsd_datetime(value)
 
 
 @router.post("/tokens", status_code=201)
@@ -210,7 +203,7 @@ def read_system(
     try:
         graph = backend.read(uri)
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
     return Response(content=graph.serialize(format="turtle"), media_type="text/turtle")
 
 
@@ -222,5 +215,5 @@ def revoke_system(
     try:
         revoke_token(backend, uri)
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
     return Response(status_code=204)

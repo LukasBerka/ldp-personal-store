@@ -37,13 +37,12 @@ from app.ldp.content import (
     etag_for_stream,
     link_header,
     negotiate,
+    normalize_media_type,
     rdflib_format_for,
-    serialize_graph,
 )
-from app.ldp.deps import BackendDep
+from app.ldp.deps import BackendDep, http_error
 from app.storage.backend import (
     NotABinaryResource,
-    PrefixViolation,
     ResourceNotFound,
     StorageBackend,
     StorageError,
@@ -67,17 +66,6 @@ _WRITE = [Depends(get_admin_token)]
 
 _RDF_LINK = link_header([LDP_Resource, LDP_RDFSource])
 _BINARY_LINK = link_header([LDP_Resource, LDP_NonRDFSource])
-
-
-def _http_error(exc: StorageError) -> HTTPException:
-    """Translate a storage-layer exception into its HTTP equivalent."""
-    if isinstance(exc, ResourceNotFound):
-        return HTTPException(status_code=404)
-    if isinstance(exc, PrefixViolation):
-        return HTTPException(status_code=403)
-    if isinstance(exc, NotABinaryResource):
-        return HTTPException(status_code=409)
-    return HTTPException(status_code=500)
 
 
 def _with_direct_membership(graph: Graph, uri: str) -> Graph:
@@ -145,7 +133,7 @@ def _get_rdf_resource(
     try:
         graph = backend.read(uri)
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
     fmt, media_type = negotiate(accept)
     etag = etag_for_graph(graph)
     if if_none_match is not None and if_none_match in (etag, "*"):
@@ -157,7 +145,7 @@ def _get_rdf_resource(
         link, allow = link_header(container_link_types(kind)), ALLOW_CONTAINER
         body_graph = _with_direct_membership(graph, uri) if kind == "direct" else graph
     return Response(
-        content=serialize_graph(body_graph, fmt),
+        content=body_graph.serialize(format=fmt),
         media_type=media_type,
         headers={"ETag": etag, "Link": link, "Allow": allow},
     )
@@ -196,7 +184,7 @@ def _put_rdf_resource(
         current_etag = None
         exists = False
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
     check_preconditions(if_match, if_none_match, current_etag, exists)
     graph = Graph()
     graph.parse(data=body, format=rdflib_format_for(content_type))
@@ -212,7 +200,9 @@ def _put_rdf_resource(
     try:
         backend.write(uri, graph)
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
+    if not exists:
+        _attach_to_parent(backend, base_uri, uri)
     return Response(
         status_code=200 if exists else 201,
         headers={
@@ -244,7 +234,9 @@ def _put_binary_resource(
     try:
         backend.write_binary(uri, body, content_type)
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
+    if not exists:
+        _attach_to_parent(backend, base_uri, uri)
     return Response(
         status_code=200 if exists else 201,
         headers={
@@ -266,8 +258,8 @@ def _put_resource(
     if_none_match: str | None,
 ) -> Response:
     # A missing Content-Type is treated as opaque bytes per HTTP's octet-stream
-    # default; only the three RDF media types take the RDF write path.
-    normalized_ct = (content_type or "application/octet-stream").split(";")[0].strip().lower()
+    # default; only the RDF media types take the RDF write path.
+    normalized_ct = normalize_media_type(content_type, "application/octet-stream")
     if normalized_ct in RDF_CONTENT_TYPES:
         return _put_rdf_resource(
             backend, base_uri, path, body, normalized_ct, if_match, if_none_match
@@ -289,10 +281,10 @@ def _post_member(
     try:
         container_graph = backend.read(container_uri)
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
     if container_kind(container_graph, container_uri) is None:
         raise HTTPException(status_code=405, headers={"Allow": ALLOW_RDF})
-    normalized_ct = (content_type or "application/octet-stream").split(";")[0].strip().lower()
+    normalized_ct = normalize_media_type(content_type, "application/octet-stream")
     member_uri = mint_member_uri(container_uri, slug)
     # The container read-modify-write below spans two backend calls and is not
     # atomic at the HTTP level; acceptable for a single-user pod.
@@ -308,11 +300,37 @@ def _post_member(
         container_graph.add((URIRef(container_uri), LDP_contains, URIRef(member_uri)))
         backend.write(container_uri, container_graph)
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
     return Response(
         status_code=201,
         headers={"Location": member_uri, "ETag": etag, "Link": link, "Allow": allow},
     )
+
+
+def _attach_to_parent(backend: StorageBackend, base_uri: str, member_uri: str) -> None:
+    """Add ``(parent, ldp:contains, member_uri)`` for a PUT-created member.
+
+    The write-side mirror of ``_detach_from_parent``, so PUT-created resources
+    surface in container listings exactly like POSTed ones. A missing parent (a
+    deep PUT with no intermediate containers) or a non-container parent leaves
+    containment untouched.
+    """
+    parent = parent_container_uri(member_uri, base_uri)
+    if parent == member_uri:
+        return
+    try:
+        parent_graph = backend.read(parent)
+    except ResourceNotFound:
+        return
+    except StorageError as exc:
+        raise http_error(exc) from exc
+    if container_kind(parent_graph, parent) is None:
+        return
+    parent_graph.add((URIRef(parent), LDP_contains, URIRef(member_uri)))
+    try:
+        backend.write(parent, parent_graph)
+    except StorageError as exc:
+        raise http_error(exc) from exc
 
 
 def _detach_from_parent(backend: StorageBackend, base_uri: str, member_uri: str) -> None:
@@ -325,12 +343,12 @@ def _detach_from_parent(backend: StorageBackend, base_uri: str, member_uri: str)
     except ResourceNotFound:
         return
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
     parent_graph.remove((URIRef(parent), LDP_contains, URIRef(member_uri)))
     try:
         backend.write(parent, parent_graph)
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
 
 
 @router.api_route("/", methods=["GET", "HEAD"], dependencies=_READ)
@@ -416,7 +434,7 @@ def delete_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Re
     except ResourceNotFound:
         target = None
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
     if (
         target is not None
         and container_kind(target, uri) is not None
@@ -426,16 +444,39 @@ def delete_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Re
     try:
         backend.delete(uri)
     except StorageError as exc:
-        raise _http_error(exc) from exc
+        raise http_error(exc) from exc
     _detach_from_parent(backend, settings.base_uri, uri)
     return Response(status_code=204)
 
 
+def _options_response(backend: StorageBackend, base_uri: str, path: str) -> Response:
+    """Answer OPTIONS with the Allow set the resource actually supports.
+
+    Containers add POST, binaries drop it, and a URI with no resource at all is a
+    404 rather than a generic capability claim.
+    """
+    uri = base_uri + path
+    try:
+        graph = backend.read(uri)
+        allow = ALLOW_CONTAINER if container_kind(graph, uri) is not None else ALLOW_RDF
+    except ResourceNotFound:
+        # Not RDF: probe for a binary. The stream's existence checks fire lazily,
+        # so pulling one chunk is the probe; no bytes are sent to the client.
+        try:
+            next(backend.stream_binary(uri), None)
+        except StorageError as exc:
+            raise HTTPException(status_code=404) from exc
+        allow = ALLOW_BINARY
+    except StorageError as exc:
+        raise http_error(exc) from exc
+    return Response(status_code=200, headers={"Allow": allow})
+
+
 @router.options("/", dependencies=_READ)
-def options_root() -> Response:
-    return Response(status_code=200, headers={"Allow": ALLOW_RDF})
+def options_root(backend: BackendDep, settings: SettingsDep) -> Response:
+    return _options_response(backend, settings.base_uri, "")
 
 
 @router.options("/{path:path}", dependencies=_READ)
-def options_resource() -> Response:
-    return Response(status_code=200, headers={"Allow": ALLOW_RDF})
+def options_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Response:
+    return _options_response(backend, settings.base_uri, path)

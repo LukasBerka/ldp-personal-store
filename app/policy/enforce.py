@@ -31,12 +31,14 @@ from app.vocab import (
 UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
-def _parse_dt(value: str) -> datetime:
+def parse_xsd_datetime(value: str) -> datetime:
     """Parse an xsd:dateTime lexical form into a tz-aware UTC datetime.
 
     rdflib serializes these timestamps with a trailing 'Z', which
     datetime.fromisoformat does not accept, so it is normalized to '+00:00' first.
-    A value carrying no offset is assumed to be UTC.
+    A value carrying no offset is assumed to be UTC. Raises ValueError on any
+    other lexical shape — the shared gate for every layer that stores or reads
+    these timestamps.
     """
     normalized = f"{value[:-1]}+00:00" if value.endswith("Z") else value
     parsed = datetime.fromisoformat(normalized)
@@ -68,15 +70,15 @@ def check_policy(
     # only a strictly-past (or, for validFrom, strictly-early) instant denies. The
     # validity window is inclusive of both validFrom and validUntil.
     expires_at = policy_graph.value(subject, POD_expiresAt)
-    if expires_at is not None and now > _parse_dt(str(expires_at)):
+    if expires_at is not None and now > parse_xsd_datetime(str(expires_at)):
         raise HTTPException(status_code=403, detail="policy: expired")
 
     valid_from = policy_graph.value(subject, POD_validFrom)
-    if valid_from is not None and now < _parse_dt(str(valid_from)):
+    if valid_from is not None and now < parse_xsd_datetime(str(valid_from)):
         raise HTTPException(status_code=403, detail="policy: not yet valid")
 
     valid_until = policy_graph.value(subject, POD_validUntil)
-    if valid_until is not None and now > _parse_dt(str(valid_until)):
+    if valid_until is not None and now > parse_xsd_datetime(str(valid_until)):
         raise HTTPException(status_code=403, detail="policy: window elapsed")
 
     # Per-grant ceiling: the counter is bumped once per delivery, so at count N-1 the
@@ -90,7 +92,7 @@ def check_policy(
         # last_used_at is written by the post-delivery counter bump; the epoch sentinel
         # means "never delivered", so the first delivery is always allowed. An elapsed
         # gap exactly equal to the interval passes; only a shorter gap denies.
-        last_used = _parse_dt(record.last_used_at)
+        last_used = parse_xsd_datetime(record.last_used_at)
         if last_used != UNIX_EPOCH and (now - last_used).total_seconds() < int(str(min_interval)):
             raise HTTPException(status_code=403, detail="policy: min interval not elapsed")
 

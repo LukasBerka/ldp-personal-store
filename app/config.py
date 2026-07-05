@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     # "terminated" — a trusted reverse proxy terminates TLS upstream (trust the deployment)
     tls_mode: Literal["off", "required", "terminated"] = "off"
 
+    # TLS key and certificate for tls_mode="required". The canonical `python -m
+    # app.main` launch path passes both to uvicorn and refuses to start without
+    # them, so a "required" pod can never silently serve plaintext; a direct
+    # uvicorn launch may supply them as --ssl-keyfile/--ssl-certfile instead.
+    ssl_keyfile: Path | None = None
+    ssl_certfile: Path | None = None
+
     # Optional PLAINTEXT admin token used to deterministically seed the bootstrap
     # hash for automated deployments and tests. It is never persisted in plaintext —
     # only its SHA-256 hash is stored. Left unset, the bootstrap generates a random

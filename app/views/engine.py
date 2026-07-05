@@ -25,14 +25,13 @@ never storage directly.
 """
 
 from datetime import UTC, datetime
-from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from rdflib import Graph, URIRef
 from starlette.background import BackgroundTask
 
-from app.config import get_settings
+from app.config import SettingsDep
 from app.ldp.content import rdflib_format_for
 from app.policy.enforce import check_policy
 from app.upstream import EngineConsumerDep, StorageClient, StorageDep, UpstreamNotFound
@@ -75,8 +74,9 @@ async def _record_delivery(
     The +1 rides the count read at validate time; the storage server applies each
     write atomically per record, and the read-to-bump race is the documented
     TOCTOU window accepted for a single-user pod. Counters and log stay faithful
-    to deliveries, not attempts, because this runs only after a successful
-    CONSTRUCT (and serialization, on the primary path).
+    to deliveries, not attempts, because this runs only once the response is
+    assured: after CONSTRUCT and serialization on the primary path, and after the
+    upstream stream has opened on the blob path.
     """
     await storage.bump_token_enforcement(token_uri, token_count + 1, now)
     current_view = int(str(view_graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
@@ -90,6 +90,7 @@ async def get_view(
     request: Request,
     storage: StorageDep,
     token: EngineConsumerDep,
+    settings: SettingsDep,
 ) -> Response:
     view_uri = str(request.app.state.system_ns) + "views/" + view_id
     if view_uri not in token.linked_view_uris:
@@ -110,8 +111,9 @@ async def get_view(
     # Replace raw storage URIs of shared resources with gated engine proxy URLs so
     # the consumer follows every reference through the engine, never storage directly.
     engine_base = str(request.app.state.engine_ns)
-    base_uri = get_settings().base_uri
-    out_graph = await rewrite_upstream_uris(result, base_uri, engine_base, view_id, bound, storage)
+    out_graph = await rewrite_upstream_uris(
+        result, settings.base_uri, engine_base, view_id, bound, storage
+    )
 
     body = out_graph.serialize(format=rdflib_format_for(view.content_type_hint), encoding="utf-8")
 
@@ -127,18 +129,19 @@ async def get_blob(
     request: Request,
     storage: StorageDep,
     token: EngineConsumerDep,
+    settings: SettingsDep,
 ) -> StreamingResponse:
     view_uri = str(request.app.state.system_ns) + "views/" + view_id
     if view_uri not in token.linked_view_uris:
         raise HTTPException(status_code=403)
 
-    raw = request.query_params.get("uri")
-    if raw is None:
+    # Starlette already percent-decoded the query string once; decoding again here
+    # would corrupt upstream URIs that legitimately contain %-sequences.
+    upstream_uri = request.query_params.get("uri")
+    if upstream_uri is None:
         raise HTTPException(status_code=400)
-    upstream_uri = unquote(raw)
-    base_uri = get_settings().base_uri
     # Open-proxy guard: only pod-local URIs may be dereferenced through this endpoint.
-    if not upstream_uri.startswith(base_uri):
+    if not upstream_uri.startswith(settings.base_uri):
         raise HTTPException(status_code=400)
 
     graph, view = await _load_view(storage, view_uri)
@@ -168,13 +171,17 @@ async def get_blob(
     if upstream_uri not in result_terms:
         raise HTTPException(status_code=404)
 
-    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    await _record_delivery(storage, token.token_uri, token.enforcement_count, view_uri, graph, now)
-
+    # Open the upstream stream before recording anything: counters and log must
+    # stay faithful to deliveries, not attempts, and a missing upstream is a 404
+    # that consumed no retrieval credit.
     try:
         upstream = await storage.open_binary_stream(upstream_uri)
     except UpstreamNotFound as exc:
         raise HTTPException(status_code=404) from exc
+
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    await _record_delivery(storage, token.token_uri, token.enforcement_count, view_uri, graph, now)
+
     return StreamingResponse(
         upstream.aiter_bytes(),
         media_type=upstream.headers.get("content-type", "application/octet-stream"),

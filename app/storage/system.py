@@ -29,11 +29,6 @@ def ensure_system_subtree(storage_root: Path) -> None:
         (storage_root / SYSTEM_SEGMENT / subdir).mkdir(parents=True, exist_ok=True)
 
 
-def is_system_uri(uri: str, base_uri: str) -> bool:
-    """Return whether *uri*'s first path segment after *base_uri* is ``.system``."""
-    return uri.removeprefix(base_uri).split("/")[0] == SYSTEM_SEGMENT
-
-
 def assert_public_uri(uri: str, base_uri: str) -> None:
     """Reject *uri* when its first path segment is one of the pod's reserved names.
 

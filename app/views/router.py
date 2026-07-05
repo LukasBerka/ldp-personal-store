@@ -17,7 +17,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
 from app.auth.deps import get_admin_token
-from app.ldp.containers import _sanitize_slug
+from app.ldp.containers import sanitize_slug
 from app.ldp.content import RDF_CONTENT_TYPES, parse_rdf_body
 from app.ldp.deps import BackendDep, RawBodyDep
 from app.storage.backend import ResourceNotFound, StorageBackend
@@ -50,7 +50,7 @@ def _submission_or_422(body: bytes, content_type: str | None) -> ViewSubmission:
 
 def _mint_view_id(slug: str | None) -> str:
     if slug:
-        sanitized = _sanitize_slug(slug)
+        sanitized = sanitize_slug(slug)
         if sanitized:
             return sanitized
     return secrets.token_urlsafe(8)

@@ -23,6 +23,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Requ
 from pyparsing.exceptions import ParseException
 
 from app.auth.deps import get_storage_token
+from app.ldp.content import FORMAT_BY_CONTENT_TYPE, negotiate_media, normalize_media_type
 from app.ldp.deps import BackendDep
 from app.storage.backend import StorageBackend
 
@@ -37,25 +38,8 @@ _RESULTS_FORMATS: dict[str, str] = {
     "text/csv": "csv",
 }
 
+# CONSTRUCT/DESCRIBE results serialize in the same RDF syntaxes the LDP layer serves.
 _RDF_DEFAULT = "text/turtle"
-_RDF_FORMATS: dict[str, str] = {
-    "text/turtle": "turtle",
-    "application/ld+json": "json-ld",
-    "application/n-triples": "nt",
-    "application/rdf+xml": "xml",
-}
-
-
-def _negotiate(
-    accept: str | None, formats: dict[str, str], default_media: str
-) -> tuple[str, str]:
-    if not accept or "*/*" in accept:
-        return default_media, formats[default_media]
-    for entry in accept.split(","):
-        media_type = entry.split(";")[0].strip().lower()
-        if media_type in formats:
-            return media_type, formats[media_type]
-    raise HTTPException(status_code=406)
 
 
 def _extract_bindings(params: Mapping[str, str]) -> dict[str, str] | None:
@@ -80,11 +64,11 @@ def _run_query(
     except ParseException as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if result.type in ("SELECT", "ASK"):
-        media_type, fmt = _negotiate(accept, _RESULTS_FORMATS, _RESULTS_DEFAULT)
+        media_type, fmt = negotiate_media(accept, _RESULTS_FORMATS, _RESULTS_DEFAULT)
         data = result.serialize(format=fmt)
         assert data is not None
     else:
-        media_type, fmt = _negotiate(accept, _RDF_FORMATS, _RDF_DEFAULT)
+        media_type, fmt = negotiate_media(accept, FORMAT_BY_CONTENT_TYPE, _RDF_DEFAULT)
         assert result.graph is not None
         data = result.graph.serialize(format=fmt, encoding="utf-8")
     return Response(content=data, media_type=media_type)
@@ -110,7 +94,7 @@ def query_post(
     content_type: Annotated[str | None, Header()] = None,
     accept: Annotated[str | None, Header()] = None,
 ) -> Response:
-    normalized_ct = (content_type or "").split(";")[0].strip().lower()
+    normalized_ct = normalize_media_type(content_type)
     if normalized_ct == "application/sparql-update":
         raise HTTPException(status_code=405)
     if normalized_ct == "application/sparql-query":

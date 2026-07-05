@@ -135,7 +135,25 @@ def run() -> None:
     import uvicorn
 
     settings = get_settings()
-    uvicorn.run("app.main:app", host=settings.host, port=settings.port, reload=settings.reload)
+    # Enforced here rather than in check_tls_precondition: a direct uvicorn launch
+    # supplies certs as CLI flags the Settings object never sees, so only this
+    # launch path can know the files are actually being handed to uvicorn.
+    if settings.tls_mode == "required" and (
+        settings.ssl_keyfile is None or settings.ssl_certfile is None
+    ):
+        raise RuntimeError(
+            "tls_mode='required' needs LDP_SSL_KEYFILE and LDP_SSL_CERTFILE so uvicorn "
+            "can terminate TLS; set both, or use tls_mode='terminated' behind a "
+            "TLS-terminating reverse proxy."
+        )
+    uvicorn.run(
+        "app.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=settings.reload,
+        ssl_keyfile=settings.ssl_keyfile,
+        ssl_certfile=settings.ssl_certfile,
+    )
 
 
 if __name__ == "__main__":

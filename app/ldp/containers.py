@@ -36,7 +36,8 @@ def parent_container_uri(uri: str, base_uri: str) -> str:
     return base_uri + relative.rsplit("/", 1)[0] + "/"
 
 
-def _sanitize_slug(slug: str) -> str:
+def sanitize_slug(slug: str) -> str:
+    """Reduce a client-supplied Slug header to a safe lowercase-dash segment."""
     collapsed = _SLUG_DASH_RUN.sub("-", _SLUG_DISALLOWED.sub("-", slug.lower()))
     return collapsed.strip("-")[:_SLUG_MAX_LEN].strip("-")
 
@@ -48,7 +49,7 @@ def mint_member_uri(container_uri: str, slug: str | None) -> str:
     uuid suffix for uniqueness; otherwise a bare uuid4 hex segment is used.
     """
     if slug:
-        sanitized = _sanitize_slug(slug)
+        sanitized = sanitize_slug(slug)
         if sanitized:
             return f"{container_uri}{sanitized}-{uuid4().hex[:8]}"
     return f"{container_uri}{uuid4().hex}"
@@ -62,10 +63,6 @@ def container_kind(graph: Graph, container_uri: str) -> str | None:
     if (subject, RDF.type, LDP_DirectContainer) in graph:
         return "direct"
     return None
-
-
-def is_container(graph: Graph, uri: str) -> bool:
-    return container_kind(graph, uri) is not None
 
 
 def container_link_types(kind: str) -> list[URIRef | str]:

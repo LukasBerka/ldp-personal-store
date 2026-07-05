@@ -15,12 +15,13 @@ them with one SPARQL query over the union graph.
 import secrets
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF, XSD
 
 from app.auth.deps import StorageTokenDep
 from app.ldp.deps import BackendDep
+from app.policy.enforce import parse_xsd_datetime
 from app.storage.backend import ResourceNotFound
 from app.vocab import (
     POD_AccessLogEntry,
@@ -32,9 +33,19 @@ from app.vocab import (
 router = APIRouter(prefix="/.system", tags=["system-internal"])
 
 
+def _valid_xsd_datetime(value: str) -> str:
+    # Reject unreadable timestamps at the boundary: a malformed value written to a
+    # record would otherwise surface later as a 500 in the policy check that
+    # parses it back.
+    parse_xsd_datetime(value)
+    return value
+
+
 class TokenEnforcementUpdate(BaseModel):
     count: int
     last_used_at: str
+
+    _check_last_used_at = field_validator("last_used_at")(_valid_xsd_datetime)
 
 
 class ViewEnforcementUpdate(BaseModel):
@@ -45,6 +56,8 @@ class AccessLogAppend(BaseModel):
     view_uri: str
     token_uri: str
     timestamp: str
+
+    _check_timestamp = field_validator("timestamp")(_valid_xsd_datetime)
 
 
 @router.post("/tokens/{record_id}/enforcement", status_code=204)
