@@ -1,12 +1,4 @@
 """FastAPI bearer-token dependencies for the storage server's HTTP surface.
-
-The storage surface accepts only administrative credentials, in the sense of the
-``.system/`` prefix invariant: the pod owner's admin token, which authorizes the
-full management surface, and the view engine's token, which participates in the
-request path with read access plus the enforcement-field writes. Routers attach
-the Annotated aliases so a handler receives an already-validated
-:class:`TokenRecord`, or the request is rejected with an identical 401 before the
-handler runs.
 """
 
 from typing import Annotated

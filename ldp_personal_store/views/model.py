@@ -1,23 +1,5 @@
 """Framework-free view-definition model: typed records, RDF (de)serialization,
 CONSTRUCT-template validation, and injection-safe parameter binding.
-
-This module imports only rdflib and Pydantic — never FastAPI or any HTTP layer —
-so the view engine can depend on it without pulling in the router.
-
-Typed-binding contract: ``"date"`` and ``"dateTime"`` parameters are bound as
-typed RDF terms (``"2026-07-06"^^xsd:date``) so a template can compare them
-directly against the pod's typed date literals — ``binding_datatypes`` carries the
-XSD datatype to the storage backend alongside the value. This is required because
-rdflib cannot cast a plain literal to a date in-query (``xsd:date(?p)`` yields
-unbound), so the datatype must be applied at bind time.
-
-Integer-binding caveat: a declared ``"int"`` parameter is still bound as a plain
-string term (``_to_term`` in the storage backend turns a scheme-less value into a
-plain ``Literal`` with no ``xsd:integer`` datatype). A template that compares
-against a bare integer literal (``FILTER(?count = 42)``) will not match, because
-``Literal("42") != Literal(42, datatype=xsd:integer)``. Templates must therefore
-coerce explicitly, e.g. ``FILTER(xsd:integer(?n) = 42)`` or ``FILTER(str(?count) =
-str(?n))``.
 """
 
 import re
@@ -78,14 +60,6 @@ class ViewSubmission(BaseModel):
 
 def parse_view_submission(graph: Graph) -> ViewSubmission:
     """Extract a view definition from a client-submitted RDF graph.
-
-    Exactly one subject typed ``pod:View`` is required; its properties are read by
-    predicate, so the client's choice of subject term — a null relative URI, a
-    placeholder URN, or the final resource URI on a GET-edit-PUT roundtrip — is
-    irrelevant. Server-managed triples (the retrieval counter) are ignored.
-    Raises ValueError on a missing or ambiguous subject, an absent title or
-    template, an ill-typed parameter declaration, or a non-integer ceiling;
-    callers translate the ValueError into 422.
     """
     subjects = list(graph.subjects(RDF.type, POD_View))
     if len(subjects) != 1:
@@ -132,10 +106,6 @@ def parse_view_submission(graph: Graph) -> ViewSubmission:
 
 def validate_construct_template(template: str) -> None:
     """Raise ValueError unless *template* is syntactically valid SPARQL CONSTRUCT.
-
-    Malformed SPARQL surfaces as a pyparsing ParseException; a well-formed but
-    non-CONSTRUCT query (SELECT/ASK/DESCRIBE) is identified by the parsed query
-    object's ``name`` and rejected. Callers translate the ValueError into 422.
     """
     try:
         parsed = parseQuery(template)
@@ -173,10 +143,6 @@ def to_view_graph(
     max_view_retrievals: int | None = None,
 ) -> Graph:
     """Serialize a view definition into an rdflib Graph ready for ``write_system``.
-
-    Each parameter becomes a fresh blank node; blank-node labels are never
-    referenced externally, so their instability across a serialize/parse cycle is
-    irrelevant (``parse_view_record`` recovers them by predicate traversal).
     """
     graph = Graph()
     subject = URIRef(uri)
@@ -201,9 +167,6 @@ def to_view_graph(
 
 def parse_view_record(graph: Graph, uri: str) -> ViewRecord:
     """Reconstruct a ViewRecord from its stored RDF triples.
-
-    Parameters are gathered by traversing ``POD_parameter`` predicates rather than
-    by blank-node identity, so the record survives a Turtle serialize/parse cycle.
     """
     subject = URIRef(uri)
     params: list[ParamDecl] = []
@@ -232,12 +195,6 @@ _INT_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
 
 def bind_params(decls: list[ParamDecl], raw: dict[str, str]) -> dict[str, str]:
     """Validate *raw* query-string values against *decls*; return initBindings-ready dict.
-
-    The returned mapping is passed to ``backend.query(template, init_bindings=...)``
-    as rdflib ``initBindings``, where each value is substituted into the query
-    algebra as a fixed RDF term. Values are NEVER string-interpolated into the
-    template — that is the injection-safety contract this function guarantees.
-    Undeclared extra keys in *raw* are ignored; only declared params are bound.
     """
     bound: dict[str, str] = {}
     for decl in decls:
@@ -266,12 +223,6 @@ def bind_params(decls: list[ParamDecl], raw: dict[str, str]) -> dict[str, str]:
 
 def binding_datatypes(decls: list[ParamDecl]) -> dict[str, str]:
     """Map each declared date/dateTime parameter to its XSD datatype IRI.
-
-    The engine passes this alongside the bound values so the storage backend binds
-    a typed RDF term (``"2026-07-06"^^xsd:date``) rather than a plain literal —
-    a date parameter must carry its datatype to compare against the pod's typed
-    date literals, and rdflib cannot recover the datatype in-query. Only date and
-    dateTime params appear; str/int/iri carry no datatype over the wire.
     """
     return {
         decl.name: str(_PARAM_DATATYPE[decl.type])

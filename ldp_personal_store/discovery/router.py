@@ -1,17 +1,4 @@
 """Consumer-facing discovery container at ``/.engine/discovery``.
-
-``GET /.engine/discovery`` authenticates a consumer bearer token (resolved through
-the storage boundary under the engine's credential, like every engine request) and
-returns a virtual LDP Basic Container listing the views that token unlocks,
-together with each view's descriptive metadata: name, description, and parameter
-shape. Metadata triples are re-rooted at the engine-namespace member URI and the
-view's CONSTRUCT template is never included, so the reserved ``.system/`` names
-and the owner's query internals stay invisible to consumers.
-
-The container is synthesized in memory on each request from the token's
-linked-view references; it is never persisted and does not pass through the LDP
-router. A token with no linked views yields a valid but empty container rather
-than an error.
 """
 
 from fastapi import APIRouter, Request, Response

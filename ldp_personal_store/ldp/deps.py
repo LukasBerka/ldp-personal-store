@@ -1,9 +1,4 @@
 """FastAPI dependencies and helpers shared by the storage server's HTTP routers.
-
-The backend is constructed once in the app lifespan and stored on
-``app.state``; route handlers receive it through :data:`BackendDep` rather than
-reaching into application state directly. :func:`http_error` is the single
-storage-exception-to-HTTP translation every router uses.
 """
 
 from typing import Annotated
@@ -35,12 +30,6 @@ def get_backend(request: Request) -> StorageBackend:
 
 
 async def get_raw_body(request: Request) -> bytes:
-    """The request body as raw bytes, whatever its Content-Type.
-
-    A ``bytes``-typed Body() parameter is JSON-decoded first when the request
-    carries a JSON Content-Type, which turns an unsupported-media-type request
-    into a 422 before the handler can answer 415; this dependency sidesteps that.
-    """
     return await request.body()
 
 

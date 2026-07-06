@@ -1,29 +1,4 @@
 """Consumer-facing view engine: the per-request RDF pipeline at ``/.engine/``.
-
-``GET /.engine/views/{view_id}`` authenticates a consumer bearer token, confirms
-the token is scoped to the requested view, loads the view definition from its
-``.system/views/{id}`` record, binds query-string parameters, runs the view's
-CONSTRUCT, serializes the result in the view's declared content type, and bumps
-the enforcement counters — in that order. The CONSTRUCT re-runs on every request;
-nothing is materialized or cached. It evaluates over the pod's public data only:
-the reserved ``.system/`` records (views, tokens, policies, the access log) are
-excluded from the storage query scope by default, so no view can leak them.
-
-Every storage interaction crosses the engine->storage HTTP boundary through the
-:class:`~ldp_personal_store.upstream.StorageClient` under the engine's own credential: record
-loads are LDP GETs, queries go to the SPARQL Protocol endpoint (parameters as
-``binding-`` extension fields), and the post-delivery counter and log writes hit
-the storage server's enforcement endpoints. The engine touches no backend state
-directly, so revoking the engine's token cuts it off from the pod entirely.
-
-``GET /.engine/blob/{view_id}`` is the gated proxy for the upstream resource URIs
-the primary handler rewrites — binaries and RDF resources alike. It re-validates
-the same consumer token and scope, guards the decoded upstream URI against
-open-proxy abuse, re-runs the view's CONSTRUCT to confirm the URI is still in the
-current result (in subject or object position), and only then streams the
-upstream bytes with the Content-Type the storage LDP surface reports — so a
-consumer reaches a shared resource exclusively through this re-authorized path,
-never storage directly.
 """
 
 from datetime import UTC, datetime
@@ -69,8 +44,6 @@ async def _load_policy(storage: StorageClient, policy_ref: str | None) -> Graph 
     try:
         return await storage.read_graph(policy_ref)
     except UpstreamNotFound:
-        # The policy URI is a stable placeholder on every token; when no graph was
-        # ever written there the grant is unconstrained.
         return None
 
 
@@ -83,13 +56,6 @@ async def _record_delivery(
     now: str,
 ) -> None:
     """Bump both counters and append the access-log entry for a confirmed delivery.
-
-    The +1 rides the count read at validate time; the storage server applies each
-    write atomically per record, and the read-to-bump race is the documented
-    TOCTOU window accepted for a single-user pod. Counters and log stay faithful
-    to deliveries, not attempts, because this runs only once the response is
-    assured: after CONSTRUCT and serialization on the primary path, and after the
-    upstream stream has opened on the blob path.
     """
     await storage.bump_token_enforcement(token_uri, token_count + 1, now)
     current_view = int(str(view_graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
@@ -237,40 +203,27 @@ async def get_blob(
     if view_uri not in token.linked_view_uris:
         raise HTTPException(status_code=403)
 
-    # Starlette already percent-decoded the query string once; decoding again here
-    # would corrupt upstream URIs that legitimately contain %-sequences.
     upstream_uri = request.query_params.get("uri")
     if upstream_uri is None:
         raise HTTPException(status_code=400)
-    # Open-proxy guard: only pod-local URIs may be dereferenced through this endpoint.
     if not upstream_uri.startswith(settings.base_uri):
         raise HTTPException(status_code=400)
-    # A reserved .system/ record is never a legitimate view result. Refusing it
-    # up front keeps the proxy from streaming server-managed records even if a
-    # CONSTRUCT template emits one of their URIs as a constant.
     if upstream_uri.startswith(str(request.app.state.system_ns)):
         raise HTTPException(status_code=400)
 
     graph, view = await _load_view(storage, view_uri)
 
-    # The forwarded "uri" key is not a declared param, so bind_params ignores it. A view
-    # that happened to declare a param literally named "uri" is an accepted edge case:
-    # its binding would be overridden by the proxy's upstream URI.
     try:
         bound = bind_params(view.params, dict(request.query_params))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # Policy decision on the fully-validated request, before any data is produced.
     check_policy(token, await _load_policy(storage, token.policy_ref), graph, view_uri)
 
     result = await storage.construct(
         view.construct_template, bindings=bound, binding_types=binding_datatypes(view.params)
     )
 
-    # A stale proxy URL — the resource is no longer produced by the view — is
-    # unreachable. Membership means appearing anywhere the rewrite step looks:
-    # subject or object position of the current result.
     result_terms = {
         str(term)
         for subject, _, obj in result
@@ -280,9 +233,6 @@ async def get_blob(
     if upstream_uri not in result_terms:
         raise HTTPException(status_code=404)
 
-    # Open the upstream stream before recording anything: counters and log must
-    # stay faithful to deliveries, not attempts, and a missing upstream is a 404
-    # that consumed no retrieval credit.
     try:
         upstream = await storage.open_binary_stream(upstream_uri)
     except UpstreamNotFound as exc:

@@ -62,7 +62,7 @@ POD_EngineToken: URIRef = POD.EngineToken  # engine-to-storage request-path cred
 
 # Token record properties
 POD_tokenHash: URIRef = POD.tokenHash  # xsd:string SHA-256 hex digest
-# One-time plaintext in the mint response body only; never persisted to any record.
+# One-time plaintext in the issuance response body only; never persisted to any record.
 POD_tokenSecret: URIRef = POD.tokenSecret
 POD_linkedView: URIRef = POD.linkedView  # .system/views/{id}; one triple per unlocked view
 POD_policyRef: URIRef = POD.policyRef  # URIRef to .system/tokens/policies/{id}

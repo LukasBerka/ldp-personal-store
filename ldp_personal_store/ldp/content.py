@@ -1,9 +1,4 @@
 """Content negotiation, serialization, ETag, and header helpers for the LDP layer.
-
-Maps between HTTP media types and rdflib format tokens for the three RDF
-syntaxes the pod serves, turns an ``Accept`` header into the response format to
-use (or a 406 when nothing acceptable matches), derives stable ETags, builds
-``Link``/``Allow`` header values, and evaluates conditional-request preconditions.
 """
 
 import hashlib

@@ -1,7 +1,4 @@
 """Container helpers: parent derivation, member-URI minting, and kind detection.
-
-Pure functions over a resource-URI string or an in-memory graph. They never touch
-storage and never manipulate ``ldp:contains`` — the router owns containment writes.
 """
 
 import re

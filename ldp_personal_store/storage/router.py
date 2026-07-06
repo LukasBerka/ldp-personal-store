@@ -1,15 +1,4 @@
 """Storage-side request-path write surface under ``.system/``.
-
-These three endpoints are the entire write access the engine's credential carries:
-bumping the mutable enforcement fields on a token or view record, and appending an
-immutable access-log entry for a confirmed delivery. Each maps 1:1 onto a backend
-primitive that rewrites only the mutable fields, so neither credential can reshape
-a record through this surface. The pod owner's admin token is accepted too — the
-owner's authority is a superset of the engine's.
-
-Log entries are independent resources under ``.system/access-log/`` (a fresh id per
-append), so appending is a plain single write and the statistics layer aggregates
-them with one SPARQL query over the union graph.
 """
 
 import secrets
@@ -35,9 +24,6 @@ router = APIRouter(prefix="/.system", tags=["system-internal"])
 
 
 def _valid_xsd_datetime(value: str) -> str:
-    # Reject unreadable timestamps at the boundary: a malformed value written to a
-    # record would otherwise surface later as a 500 in the policy check that
-    # parses it back.
     parse_xsd_datetime(value)
     return value
 

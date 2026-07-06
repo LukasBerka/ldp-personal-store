@@ -1,20 +1,4 @@
 """Management router for the reserved ``.system/`` subtree.
-
-Mounted ahead of the public LDP catch-all so ``.system/`` paths are adjudicated
-here instead of reaching the public handlers. The whole surface speaks RDF, like
-everything else the pod owner manages: a grant is minted by POSTing an RDF body
-whose ``pod:linkedView`` objects name the views it unlocks and whose optional
-``dcterms:title`` gives the grant a human-readable name (the one-time plaintext
-comes back as ``pod:tokenSecret`` in the creation response and is never
-persisted), a policy is authored by PUTting its RDF graph, and the ``.system/``
-containers are browsable as LDP Basic Containers synthesized from the records'
-type markers.
-
-Writes require the pod owner's admin token. Reads accept either administrative
-credential, but the engine's token is scoped to the record kinds the request
-path needs (``views/`` and ``tokens/``, which includes ``tokens/policies/``);
-creation, deletion, and wholesale rewriting of system resources remain in the
-pod owner's hands.
 """
 
 from typing import Annotated
@@ -31,7 +15,7 @@ from ldp_personal_store.apidocs import (
     turtle_response,
 )
 from ldp_personal_store.auth.deps import AdminTokenDep, StorageTokenDep
-from ldp_personal_store.auth.tokens import mint_token, revoke_token
+from ldp_personal_store.auth.tokens import issue_token, revoke_token
 from ldp_personal_store.config import Settings, SettingsDep
 from ldp_personal_store.ldp.content import link_header, parse_rdf_body
 from ldp_personal_store.ldp.deps import BackendDep, RawBodyDep, http_error
@@ -91,8 +75,8 @@ def _validate_constraint(value: str, datatype: URIRef) -> None:
 @router.post(
     "/tokens",
     status_code=201,
-    operation_id="mintToken",
-    summary="Mint a consumer grant",
+    operation_id="issueToken",
+    summary="Issue a consumer grant",
     response_class=Response,
     responses={
         201: turtle_response(
@@ -129,14 +113,14 @@ def _validate_constraint(value: str, datatype: URIRef) -> None:
         ),
     },
 )
-def issue_token(
+def issue_grant(
     request: Request,
     backend: BackendDep,
     token: AdminTokenDep,
     body: RawBodyDep,
     content_type: Annotated[str | None, Header()] = None,
 ) -> Response:
-    """Mint a grant from an RDF description of the views it unlocks.
+    """Issue a grant from an RDF description of the views it unlocks.
 
     The response is the created record's representation plus one triple that
     exists nowhere else: ``pod:tokenSecret``, the plaintext bearer token,
@@ -147,7 +131,7 @@ def issue_token(
     linked = sorted(str(v) for v in graph.objects(None, POD_linkedView))
     title = next(iter(graph.objects(None, DC_title)), None)
     name = str(title) if title is not None else None
-    plaintext, record_uri = mint_token(
+    plaintext, record_uri = issue_token(
         backend, request.app.state.system_ns, linked, name=name
     )
     out = backend.read(record_uri)

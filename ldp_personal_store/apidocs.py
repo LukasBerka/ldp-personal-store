@@ -48,7 +48,7 @@ SECURITY_SCHEMES = {
         "type": "http",
         "scheme": "bearer",
         "description": (
-            "A data consumer's grant, minted by the pod owner via `POST /.system/tokens` "
+            "A data consumer's grant, issued by the pod owner via `POST /.system/tokens` "
             "(the plaintext is the `pod:tokenSecret` literal in that one response) and "
             "delivered out of band. Valid only on the consumer surface: "
             "`/.engine/discovery`, `/.engine/views/{view_id}`, and "

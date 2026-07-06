@@ -1,14 +1,4 @@
 """LDP HTTP layer: RDF resource and container endpoints over the storage backend.
-
-The whole surface is gated by the storage server's administrative credentials:
-data consumers never talk to storage directly — they reach data only through the
-view engine. Reads accept the pod owner's admin token or the engine's token (the
-engine dereferences resources and streams binaries on consumers' behalf); writes
-require the owner's admin token, so the engine cannot author or remove resources.
-
-Handlers are synchronous: the backend performs blocking rdflib, lock, and
-filesystem work, and FastAPI runs sync path operations in a threadpool, which is
-the correct execution model for blocking code.
 """
 
 from typing import Annotated
@@ -82,18 +72,11 @@ _BINARY_LINK = link_header([LDP_Resource, LDP_NonRDFSource])
 
 def _binary_link(uri: str) -> str:
     """``Link`` header for the LDP-NR at *uri*.
-
-    Its LDP interaction-model types plus a ``describedby`` pointer to the associated
-    description (LDP-RS) resource at ``{uri}.meta``, anchored to the LDP-NR so a
-    consumer can tell which resource the description belongs to.
     """
     return f'{_BINARY_LINK}, <{uri}.meta>; rel="describedby"; anchor="{uri}"'
 
 
-# OpenAPI text for the catch-all data plane. OpenAPI cannot express a
-# resource-oriented protocol structurally, so the LDP semantics a client needs —
-# negotiation, ETags, containment, the RDF/binary split — live in these
-# descriptions.
+# OpenAPI
 _GET_DESCRIPTION = """\
 Dereference the resource at this pod-relative path: an RDF document, an LDP container, \
 or a stored binary.
@@ -207,23 +190,10 @@ _OPTIONS_RESPONSES: Responses = {
 
 
 async def raw_body(request: Request) -> bytes:
-    """Read the whole request body as raw bytes, bypassing FastAPI's content-type dispatch.
-
-    A declared ``bytes`` body parameter makes FastAPI JSON-parse any
-    ``application/…+json`` payload — including the RDF ``application/ld+json``
-    serialization — before the handler runs and reject it with 422. Reading the
-    body straight off the request keeps every RDF syntax on the same raw-bytes path.
-    """
     return await request.body()
 
 
 def _head_of(response: Response) -> Response:
-    """Return a body-less copy of *response* for a HEAD request.
-
-    HEAD echoes GET's status and headers (Content-Length included) with no body.
-    Building a fresh header-only response also means a NonRDFSource HEAD never
-    consumes the binary stream generator.
-    """
     return Response(status_code=response.status_code, headers=dict(response.headers))
 
 
@@ -234,24 +204,6 @@ def _container_representation(
     include_membership: bool = True,
 ) -> Graph:
     """Return a response copy of a container *graph* with LDP types synthesized.
-
-    A container advertises the full LDP interaction-model chain in its body —
-    ``ldp:Resource``, ``ldp:RDFSource``, ``ldp:Container`` — alongside the specific
-    stored subtype, so the representation self-describes the same types the ``Link``
-    header carries. A Direct Container additionally gets its membership triples
-    materialized from the stored ``ldp:contains`` plus its ``membershipResource``
-    and member-relation predicate.
-
-    ``include_containment`` / ``include_membership`` carry a resolved ``Prefer``
-    header: when false, containment (``ldp:contains``) triples are dropped from the
-    body and membership triples are not synthesized. Membership still derives from
-    the *stored* containment, so a minimal container can include membership without
-    exposing containment.
-
-    Plain LDP-RS representations are intentionally left untouched (they round-trip
-    verbatim); the stored graph is never mutated. The ETag is derived from the
-    stored graph separately, and since this synthesis is deterministic the validator
-    still identifies the body uniquely.
     """
     subject = URIRef(uri)
     result = Graph()
@@ -280,14 +232,6 @@ def _get_binary_resource(
     if_none_match: str | None,
 ) -> Response | None:
     """Stream the binary resource at *uri*, or return None when it is not binary.
-
-    ``stream_binary`` is the only reliable existence probe for a binary: ``read``
-    looks for a ``{uri}.ttl`` that binaries never have. Because the backend yields
-    bytes lazily, the generator's existence checks fire only once iterated, so the
-    ETag pass over the stream doubles as the probe — ``NotABinaryResource`` means an
-    RDF resource lives here (the caller falls through to RDF) and ``ResourceNotFound``
-    means nothing exists. Hashing the file on every read is acceptable for a
-    personal pod.
     """
     try:
         etag = etag_for_stream(backend.stream_binary(uri))
@@ -382,10 +326,8 @@ def _put_rdf_resource(
     if stored_is_container or container_kind(graph, uri) is not None:
         subject = URIRef(uri)
         if stored_is_container and stored is not None:
-            # Containment is server-managed. Echoing the stored ldp:contains set back
-            # (as a client does after GET-then-PUT) is fine, but supplying a different
-            # set is an attempt to modify containment and is refused rather than
-            # silently ignored.
+            # Containment is server-managed. Supplying a different
+            # set is an attempt to modify containment and is refused as per LDP standards
             client_contains = set(graph.objects(subject, LDP_contains))
             stored_contains = set(stored.objects(subject, LDP_contains))
             if client_contains and client_contains != stored_contains:
@@ -393,15 +335,12 @@ def _put_rdf_resource(
                     status_code=409,
                     detail="PUT must not modify server-managed containment triples",
                 )
-        # ldp:contains is server-managed: discard any client-supplied containment
-        # and restore the containment recorded on the stored container.
+        # ldp:contains is server-managed: discard any client-supplied containment.
         graph.remove((None, LDP_contains, None))
         if stored is not None:
             for member in stored.objects(subject, LDP_contains):
                 graph.add((subject, LDP_contains, member))
-        # Membership triples are server-derived from containment and synthesized only
-        # in responses. Drop any copy a client echoed back (after GET-then-PUT), or a
-        # later minimal-container GET would surface them from storage as if authored.
+        # Membership triples are server-derived from containment and synthesized only in responses.
         membership_resource = graph.value(subject, LDP_membershipResource)
         if membership_resource is not None:
             has_member = graph.value(subject, LDP_hasMemberRelation)
@@ -470,8 +409,6 @@ def _put_resource(
     if_match: str | None,
     if_none_match: str | None,
 ) -> Response:
-    # A missing Content-Type is treated as opaque bytes per HTTP's octet-stream
-    # default; only the RDF media types take the RDF write path.
     normalized_ct = normalize_media_type(content_type, "application/octet-stream")
     if normalized_ct in RDF_CONTENT_TYPES:
         return _put_rdf_resource(
@@ -499,8 +436,6 @@ def _post_member(
         raise HTTPException(status_code=405, headers={"Allow": ALLOW_RDF})
     normalized_ct = normalize_media_type(content_type, "application/octet-stream")
     member_uri = mint_member_uri(container_uri, slug)
-    # The container read-modify-write below spans two backend calls and is not
-    # atomic at the HTTP level; acceptable for a single-user pod.
     try:
         if normalized_ct in RDF_CONTENT_TYPES:
             member_graph = parse_rdf_body(body, normalized_ct, base_uri=member_uri)
@@ -521,11 +456,6 @@ def _post_member(
 
 def _attach_to_parent(backend: StorageBackend, base_uri: str, member_uri: str) -> None:
     """Add ``(parent, ldp:contains, member_uri)`` for a PUT-created member.
-
-    The write-side mirror of ``_detach_from_parent``, so PUT-created resources
-    surface in container listings exactly like POSTed ones. A missing parent (a
-    deep PUT with no intermediate containers) or a non-container parent leaves
-    containment untouched.
     """
     parent = parent_container_uri(member_uri, base_uri)
     if parent == member_uri:
@@ -604,9 +534,6 @@ def get_resource(
     return _get_resource(backend, settings.base_uri, path, accept, if_none_match, prefer)
 
 
-# HEAD mirrors GET with the body stripped. FastAPI's @router.get registers GET
-# only (unlike bare Starlette), so HEAD is wired explicitly; it stays out of the
-# schema because the GET operation already documents it.
 @router.head("/", dependencies=_READ, include_in_schema=False)
 def head_root(
     backend: BackendDep,
@@ -758,9 +685,6 @@ def delete_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Re
 
 def _options_response(backend: StorageBackend, base_uri: str, path: str) -> Response:
     """Answer OPTIONS with the Allow set the resource actually supports.
-
-    Containers add POST, binaries drop it, and a URI with no resource at all is a
-    404 rather than a generic capability claim.
     """
     uri = base_uri + path
     is_container = False

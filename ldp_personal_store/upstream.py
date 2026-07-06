@@ -1,17 +1,4 @@
 """The engine->storage HTTP boundary: client, credential, and consumer validation.
-
-The view engine reaches storage exclusively through :class:`StorageClient` — LDP
-GETs for records and binaries, the SPARQL 1.1 Protocol endpoint for queries, and
-the storage server's enforcement/log endpoints for its post-delivery writes. Every
-request presents the engine's bearer token, so the pod owner can cut the engine
-off at any time by revoking the ``.system/tokens/engine`` record. In the bundled
-deployment the transport is an in-process ASGI bridge — the same HTTP surface with
-no network socket; a split deployment points the client at a storage URL instead.
-
-Consumer and owner tokens presented to the engine are validated here as well: the
-engine holds no token records of its own, so it resolves a presented token by
-querying storage (under its engine credential) and comparing hashes exactly as the
-storage-side validator does.
 """
 
 import hashlib

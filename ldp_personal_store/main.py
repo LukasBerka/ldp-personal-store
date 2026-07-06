@@ -121,7 +121,7 @@ binary. The system vocabulary uses the prefix `pod:` = `urn:pod:vocab:`;
 
 1. `PUT` / `POST` data anywhere outside the reserved `.system/` and `.engine/` prefixes.
 2. `POST /.system/views` — define a view: a SPARQL CONSTRUCT template plus typed parameters.
-3. `POST /.system/tokens` — mint a grant naming the views it unlocks; capture the one-time
+3. `POST /.system/tokens` — issue a grant naming the views it unlocks; capture the one-time
    `pod:tokenSecret` from the response and hand it to the consumer out of band.
 4. `PUT /.system/tokens/policies/{id}` — optionally bound the grant (expiry, validity
    window, retrieval count, rate).
@@ -176,7 +176,7 @@ _TAGS_METADATA = [
     {
         "name": "system",
         "description": (
-            "The reserved `.system/` management tree: minting grants, authoring policies, "
+            "The reserved `.system/` management tree: issuing grants, authoring policies, "
             "browsing views, tokens, policies, and the access log as LDP containers, and "
             "revoking records. RDF in and out, like the rest of the pod."
         ),

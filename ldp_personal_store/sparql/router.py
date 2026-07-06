@@ -1,21 +1,4 @@
 """SPARQL 1.1 Protocol read-only query endpoint over the in-memory graph.
-
-This endpoint is the query half of the storage HTTP surface the view engine talks
-to: SPARQL has no per-query URI scope, so a valid administrative credential (the
-pod owner's admin token or the engine's token) is required for every query.
-
-Extension parameters: any ``binding-<name>`` request parameter is bound as the
-SPARQL variable ``?<name>`` via rdflib ``initBindings`` before evaluation — the
-same injection-safe mechanism the engine used in-process, now carried over the
-protocol. ``include-system=true`` widens evaluation to the reserved ``.system/``
-graphs, which are excluded by default so queries run on behalf of views never
-see server-managed records; only the engine's token lookups and the owner's
-management surface opt in. Standard SPARQL Protocol clients that send no such
-parameters are unaffected.
-
-Handlers are synchronous: the backend performs blocking rdflib and lock work, and
-FastAPI runs sync path operations in a threadpool, which is the correct execution
-model for blocking code.
 """
 
 import urllib.parse

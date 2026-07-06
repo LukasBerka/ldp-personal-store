@@ -1,9 +1,4 @@
 """The storage dependency seam.
-
-Defines the :class:`StorageBackend` Protocol that every layer above storage
-depends on, together with the custom exception hierarchy that is part of the
-backend contract. Callers import both the Protocol and the exceptions from this
-single module so the seam stays self-contained.
 """
 
 from collections.abc import Iterator

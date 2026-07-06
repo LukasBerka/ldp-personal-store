@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     # Optional PLAINTEXT engine token: the credential the view engine presents on the
     # engine->storage boundary. Only its SHA-256 hash is persisted. Left unset, the
-    # bundled deployment mints a fresh engine token on every startup and keeps the
+    # bundled deployment issues a fresh engine token on every startup and keeps the
     # plaintext in process memory only; set it explicitly when the engine runs as a
     # separate process against a remote storage server.
     engine_token: str | None = None

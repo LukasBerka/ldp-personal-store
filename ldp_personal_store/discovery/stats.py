@@ -1,15 +1,4 @@
 """On-demand statistics over the append-only access log.
-
-The owner reads aggregate delivery counts by aggregating the ``pod:AccessLogEntry``
-resources the delivery paths append under ``.system/access-log/``: a total, a
-per-view breakdown carrying each view's most recent delivery instant, and a
-per-consumer breakdown keyed by the authorizing token record — UC7's "how many
-times each has been accessed, by which consumers, and when". The engine runs all
-three aggregations over the storage boundary's SPARQL endpoint, where every log
-entry is its own named-graph context in the backend's union graph, so a
-graph-clause-free WHERE sees them all. Log entries live under the reserved
-``.system/`` subtree, which the query scope excludes by default, so every
-aggregation opts in with ``include_system``.
 """
 
 from pydantic import BaseModel

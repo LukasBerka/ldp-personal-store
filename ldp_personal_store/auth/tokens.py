@@ -1,16 +1,4 @@
-"""Opaque bearer token minting, validation, revocation, and admin bootstrap.
-
-Tokens are random URL-safe strings; only their SHA-256 hex digests are persisted
-as RDF under ``.system/tokens/``. The plaintext is returned to the caller exactly
-once at mint time and never enters the graph or touches disk. Validation hashes
-the presented token and resolves the record by digest equality; only digests of
-high-entropy random tokens are ever compared, so equality checks reveal nothing
-useful about any plaintext.
-
-The pure pieces of validation — the hash-lookup query, grouping the lookup rows
-into candidate records, and assembling a :class:`TokenRecord` from a record graph
-— are shared with the engine-side validator in :mod:`ldp_personal_store.upstream`, which runs
-the same steps over the storage HTTP boundary instead of the backend.
+"""Opaque bearer token issuance, validation, revocation, and admin bootstrap.
 """
 
 import hashlib
@@ -53,7 +41,7 @@ SELECT ?tokenUri ?stored ?tokenType WHERE {
 class TokenRecord:
     token_uri: str
     token_type: str
-    # Every view this grant unlocks (one pod:linkedView triple each); empty for
+    # Every view this token unlocks (one pod:linkedView triple each). Empty for
     # unscoped tokens such as the admin and engine credentials.
     linked_view_uris: tuple[str, ...]
     policy_ref: str | None
@@ -62,8 +50,6 @@ class TokenRecord:
 
 
 def unauthorized() -> HTTPException:
-    # Missing, invalid, revoked, and wrong-type tokens all raise this identical 401
-    # so a caller can never distinguish "no such token" from "valid but wrong type".
     return HTTPException(status_code=401, headers={"WWW-Authenticate": "Bearer"})
 
 
@@ -74,12 +60,7 @@ def match_token_rows(
 ) -> tuple[str, URIRef]:
     """Resolve hash-lookup rows to ``(token_uri, matched_type)`` or raise the 401.
 
-    One row arrives per rdf:type triple. Rows are grouped by ``tokenUri`` before
-    anything is compared, so two records that happen to carry the same hash (the
-    same plaintext seeded twice) can never mix one record's identity with
-    another's type markers. The first candidate record — in sorted-URI order, for
-    determinism — whose hash matches and whose markers include one of
-    *allowed_types* wins; no candidate means the indistinguishable 401.
+    One row arrives per rdf:type triple.
     """
     types_by_uri: dict[str, set[str]] = {}
     hash_by_uri: dict[str, str] = {}
@@ -122,15 +103,12 @@ def token_record_from_graph(graph: Graph, token_uri: str, token_type: URIRef) ->
 
 
 def _allocate_record_id(backend: StorageBackend, system_ns: Namespace) -> str:
-    # A fresh short id is collision-free in practice for a personal pod; the single
-    # retry covers the astronomically unlikely case of hitting an existing record.
-    for _ in range(2):
-        record_id = secrets.token_urlsafe(8)
-        try:
-            backend.read(str(system_ns) + "tokens/" + record_id)
-        except ResourceNotFound:
-            return record_id
-    raise RuntimeError("could not allocate a unique token record id after one retry")
+    record_id = secrets.token_urlsafe(8)
+    try:
+        backend.read(str(system_ns) + "tokens/" + record_id)
+    except ResourceNotFound:
+        return record_id
+    raise RuntimeError("could not allocate a unique token record id")
 
 
 def _write_record(
@@ -149,8 +127,7 @@ def _write_record(
     graph.add((subject, RDF.type, token_type))
     graph.add((subject, POD_tokenHash, Literal(token_hash, datatype=XSD.string)))
     # Optional owner-chosen label so a grant reads as "colleagues" or "access-bob"
-    # in listings instead of only its opaque record id; purely descriptive and
-    # never consulted during validation.
+    # in listings instead of only its opaque record id.
     if name:
         graph.add((subject, DC_title, Literal(name, datatype=XSD.string)))
     for view_uri in linked_view_uris:
@@ -164,7 +141,7 @@ def _write_record(
     return token_uri
 
 
-def mint_token(
+def issue_token(
     backend: StorageBackend,
     system_ns: Namespace,
     linked_view_uris: Sequence[str] = (),
@@ -260,7 +237,7 @@ def bootstrap_engine_token(
     The record lives at ``.system/tokens/engine`` so the pod owner can revoke the
     engine's read access at any time by deleting it. With *engine_token* supplied
     (split deployments, tests) its hash is seeded deterministically; otherwise a
-    fresh random token is minted on every startup and the plaintext exists only in
+    fresh random token is issued on every startup and the plaintext exists only in
     process memory — the bundled engine is handed it directly and nothing else ever
     needs it. Only the SHA-256 hash is persisted either way.
     """

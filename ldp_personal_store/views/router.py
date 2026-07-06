@@ -1,14 +1,4 @@
 """Admin-gated management router for stored view definitions.
-
-Views are LDP resources managed with the same verbs and representations as the
-pod owner's data: POST an RDF representation to ``/.system/views`` to create
-(``Slug`` honored), PUT one to ``/.system/views/{view_id}`` to replace, DELETE
-to remove; a GET of a view falls through to the system Turtle reader, and a GET
-of the ``/.system/views/`` container lists the catalog. A new or changed
-definition is live in the in-memory graph immediately with no restart.
-Definition-time validation rejects non-CONSTRUCT templates, param/template
-mismatches, and unsupported content-type hints with 422. This router is mounted
-ahead of the ``.system/`` catch-all so these operations win route resolution.
 """
 
 import secrets
