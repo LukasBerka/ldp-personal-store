@@ -48,6 +48,23 @@ For an autoreloading dev server, use the explicit dev-mode alternative:
 uv run fastapi dev app/main.py
 ```
 
+## Run with Docker
+
+The repository ships a `Dockerfile` and `docker-compose.yml` that package the pod as a
+container:
+
+```sh
+docker compose up --build
+```
+
+The image binds `0.0.0.0` (a container is never reached over its own loopback) with
+`LDP_TLS_MODE=terminated`, and the compose file publishes the port on the host loopback
+only (`127.0.0.1:8000`), so plaintext never reaches a public interface; a public
+deployment puts a TLS-terminating reverse proxy in front of the container instead. Pod
+state persists in the named volume `pod-data` mounted at `/data`. The admin token is
+logged once on first boot (`docker compose logs pod`) or seeded via `LDP_ADMIN_TOKEN`
+in the compose environment.
+
 ## Configuration
 
 Every setting has a working default and is read from an `LDP_`-prefixed environment
@@ -60,21 +77,25 @@ variable (or a `.env` file). **None are required for a loopback pod.**
 | `LDP_HOST` | `127.0.0.1` | Bind interface; also drives the TLS precondition below. |
 | `LDP_PORT` | `8000` | Bind port. |
 | `LDP_TLS_MODE` | `off` | `off` \| `required` \| `terminated` (see below). |
+| `LDP_SSL_KEYFILE` | unset | TLS private key for `tls_mode=required`; forwarded to uvicorn by `python -m app.main`. |
+| `LDP_SSL_CERTFILE` | unset | TLS certificate for `tls_mode=required`; forwarded to uvicorn by `python -m app.main`. |
 | `LDP_ADMIN_TOKEN` | unset | Plaintext admin token to seed deterministically. Left unset, a random token is generated and logged once at boot. |
 | `LDP_RELOAD` | `false` | Dev-only autoreload file-watcher. |
 
 **TLS precondition.** For any non-loopback `host`, `tls_mode` must be `required`
 (uvicorn-native TLS) or `terminated` (TLS ended at a trusted reverse proxy upstream),
-otherwise boot is refused rather than serving plaintext on a public interface. Note the
-current limitation: the `python -m app.main` path does not forward
-`ssl_keyfile`/`ssl_certfile`, so uvicorn-native TLS today requires running uvicorn
-directly with a matching host, e.g.:
+otherwise boot is refused rather than serving plaintext on a public interface. With
+`tls_mode=required`, the `python -m app.main` path hands `LDP_SSL_KEYFILE` /
+`LDP_SSL_CERTFILE` to uvicorn and refuses to start when either is missing:
 
 ```sh
 LDP_HOST=0.0.0.0 LDP_TLS_MODE=required \
-  uv run uvicorn app.main:app --host 0.0.0.0 \
-  --ssl-keyfile key.pem --ssl-certfile cert.pem
+  LDP_SSL_KEYFILE=key.pem LDP_SSL_CERTFILE=cert.pem \
+  uv run python -m app.main
 ```
+
+A direct uvicorn launch may pass `--ssl-keyfile`/`--ssl-certfile` instead; in that
+case the launch flags, not the pod, are what guarantee TLS actually terminates.
 
 ## Deployment seam / future split
 

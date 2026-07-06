@@ -1,0 +1,28 @@
+services:
+  pod:
+    build: .
+    ports:
+      # Published on the host loopback only, so the plaintext port never
+      # reaches a public interface — matching the trust assumption of
+      # LDP_TLS_MODE=terminated. A public deployment fronts this with a
+      # TLS-terminating reverse proxy instead of widening the bind.
+      - "127.0.0.1:8000:8000"
+    environment:
+      LDP_BASE_URI: "http://localhost:8000/"
+      # LDP_ADMIN_TOKEN: seed the admin credential deterministically here;
+      # left unset, the token is generated and logged once on first boot.
+    volumes:
+      - pod-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  pod-data:
