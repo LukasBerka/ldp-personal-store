@@ -22,6 +22,13 @@ from fastapi import APIRouter, Header, HTTPException, Request, Response
 from rdflib import Graph, Literal, URIRef, Variable
 from rdflib.namespace import RDF, XSD
 
+from app.apidocs import (
+    ADMIN_AUTH,
+    STORAGE_AUTH,
+    UNAUTHORIZED,
+    rdf_request_body,
+    turtle_response,
+)
 from app.auth.deps import AdminTokenDep, StorageTokenDep
 from app.auth.tokens import mint_token, revoke_token
 from app.config import Settings, SettingsDep
@@ -79,7 +86,40 @@ def _validate_constraint(value: str, datatype: URIRef) -> None:
         parse_xsd_datetime(value)
 
 
-@router.post("/tokens", status_code=201)
+@router.post(
+    "/tokens",
+    status_code=201,
+    operation_id="mintToken",
+    summary="Mint a consumer grant",
+    response_class=Response,
+    responses={
+        201: turtle_response(
+            "The created record. `pod:tokenSecret` is the consumer's plaintext bearer "
+            "token, surfaced only here and never retrievable again; `pod:policyRef` "
+            "names the policy resource to `PUT` for bounding this grant; `Location` "
+            "names the record for later revocation.",
+            "@prefix pod: <urn:pod:vocab:> .\n\n"
+            "<https://pod.example/.system/tokens/NGlxYzZa> a pod:Token , pod:ConsumerToken ;\n"
+            "    pod:linkedView <https://pod.example/.system/views/reading-list> ;\n"
+            "    pod:policyRef <https://pod.example/.system/tokens/policies/NGlxYzZa> ;\n"
+            "    pod:enforcementCount 0 ;\n"
+            '    pod:tokenSecret "3q2xkY…M8slQ" .',
+        ),
+        400: {"description": "The RDF body does not parse."},
+        401: UNAUTHORIZED,
+        415: {"description": "`Content-Type` is not one of the four RDF media types."},
+    },
+    openapi_extra={
+        "security": ADMIN_AUTH,
+        "requestBody": rdf_request_body(
+            "An RDF description whose `pod:linkedView` objects name the views this grant "
+            "unlocks (any number, including none; the subject term is irrelevant).",
+            "@prefix pod: <urn:pod:vocab:> .\n\n"
+            "[] pod:linkedView <https://pod.example/.system/views/reading-list> ,\n"
+            "                  <https://pod.example/.system/views/schedule> .",
+        ),
+    },
+)
 def issue_token(
     request: Request,
     backend: BackendDep,
@@ -93,7 +133,8 @@ def issue_token(
     exists nowhere else: ``pod:tokenSecret``, the plaintext bearer token,
     surfaced exactly once — only its SHA-256 hash is stored on the record.
     """
-    graph = parse_rdf_body(body, content_type)
+    tokens_ns = str(request.app.state.system_ns) + "tokens/"
+    graph = parse_rdf_body(body, content_type, base_uri=tokens_ns)
     linked = sorted(str(v) for v in graph.objects(None, POD_linkedView))
     plaintext, record_uri = mint_token(backend, request.app.state.system_ns, linked)
     out = backend.read(record_uri)
@@ -106,7 +147,42 @@ def issue_token(
     )
 
 
-@router.put("/tokens/policies/{policy_id}")
+@router.put(
+    "/tokens/policies/{policy_id}",
+    operation_id="writePolicy",
+    summary="Create or replace a grant's policy",
+    response_class=Response,
+    responses={
+        200: turtle_response("Replaced; the canonicalized policy as stored."),
+        201: turtle_response("Created; the canonicalized policy as stored."),
+        400: {"description": "The RDF body does not parse."},
+        401: UNAUTHORIZED,
+        415: {"description": "`Content-Type` is not one of the four RDF media types."},
+        422: {
+            "description": (
+                "Not exactly one `pod:Policy` subject, or a constraint value outside its "
+                "datatype (`xsd:dateTime` / `xsd:integer`)."
+            )
+        },
+    },
+    openapi_extra={
+        "security": ADMIN_AUTH,
+        "requestBody": rdf_request_body(
+            "One `pod:Policy` subject carrying any subset of the five constraints: "
+            "`pod:expiresAt`, `pod:validFrom`, `pod:validUntil` (`xsd:dateTime`); "
+            "`pod:maxRetrievals` (total deliveries for the grant) and `pod:minInterval` "
+            "(seconds between deliveries, `xsd:integer`). Omitted constraints do not "
+            "bind. The `{policy_id}` to PUT to is the last path segment of the grant's "
+            "`pod:policyRef`.",
+            "@prefix pod: <urn:pod:vocab:> .\n"
+            "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n\n"
+            "[] a pod:Policy ;\n"
+            '    pod:expiresAt "2026-12-31T23:59:59Z"^^xsd:dateTime ;\n'
+            '    pod:maxRetrievals "20"^^xsd:integer ;\n'
+            '    pod:minInterval "60"^^xsd:integer .',
+        ),
+    },
+)
 def write_policy(
     policy_id: str,
     request: Request,
@@ -122,13 +198,13 @@ def write_policy(
     values are re-rooted at the canonical policy URI and stored with their XSD
     datatypes; omitted constraints are cleared, unknown triples are dropped.
     """
-    graph = parse_rdf_body(body, content_type)
+    policy_uri = str(request.app.state.system_ns) + "tokens/policies/" + policy_id
+    graph = parse_rdf_body(body, content_type, base_uri=policy_uri)
     subjects = list(graph.subjects(RDF.type, POD_Policy))
     if len(subjects) != 1:
         raise HTTPException(
             status_code=422, detail="Body must describe exactly one pod:Policy resource"
         )
-    policy_uri = str(request.app.state.system_ns) + "tokens/policies/" + policy_id
     canonical_subject = URIRef(policy_uri)
     canonical = Graph()
     canonical.add((canonical_subject, RDF.type, POD_Policy))
@@ -172,9 +248,15 @@ def _synthesize_container(key: str, backend: StorageBackend, settings: Settings)
             settings.base_uri + ".system/" + sub + "/" for sub in ("views", "tokens", "access-log")
         ]
     else:
-        for row in backend.query(_CONTAINER_MEMBER_QUERIES[key]).bindings:
+        # A record only counts as a member when it both carries the container's
+        # rdf:type marker and lives under the container's URI subtree. The prefix
+        # guard keeps a stray typed subject elsewhere in the union graph — e.g. a
+        # public data resource typed pod:View, or a relative IRI that resolved
+        # outside the pod — from leaking in as a phantom member.
+        prefix = container_uri
+        for row in backend.query(_CONTAINER_MEMBER_QUERIES[key], include_system=True).bindings:
             member = row.get(Variable("m"))
-            if member is not None:
+            if member is not None and str(member).startswith(prefix):
                 members.append(str(member))
         if key == "tokens":
             members.append(settings.base_uri + ".system/tokens/policies/")
@@ -188,13 +270,37 @@ def _synthesize_container(key: str, backend: StorageBackend, settings: Settings)
     )
 
 
-@router.get("/{path:path}")
+@router.get(
+    "/{path:path}",
+    operation_id="readSystemResource",
+    summary="Browse the management tree",
+    description=(
+        "Read a management record or one of the synthesized LDP Basic Containers that "
+        "list them: `` ``(the `.system/` root), `views/`, `tokens/`, `tokens/policies/`, "
+        "and `access-log/`. Container listings are derived live from the records' "
+        "`rdf:type` markers, so they are always current. Responses are `text/turtle`. "
+        "Token records never contain the plaintext secret — only its hash. The engine's "
+        "credential can read `views/` and `tokens/` only; the admin token reads everything."
+    ),
+    response_class=Response,
+    responses={
+        200: turtle_response(
+            "The record or container listing.",
+            "@prefix ldp: <http://www.w3.org/ns/ldp#> .\n\n"
+            "<https://pod.example/.system/views/> a ldp:BasicContainer ;\n"
+            "    ldp:contains <https://pod.example/.system/views/reading-list> ,\n"
+            "                 <https://pod.example/.system/views/schedule> .",
+        ),
+        401: UNAUTHORIZED,
+        403: {"description": "The engine credential asked for a record kind outside its scope."},
+        404: {"description": "No record at this path."},
+    },
+    openapi_extra={"security": STORAGE_AUTH},
+)
 def read_system(
     path: str, backend: BackendDep, settings: SettingsDep, token: StorageTokenDep
 ) -> Response:
-    if token.token_type == str(POD_EngineToken) and not path.startswith(
-        _ENGINE_READABLE_PREFIXES
-    ):
+    if token.token_type == str(POD_EngineToken) and not path.startswith(_ENGINE_READABLE_PREFIXES):
         raise HTTPException(status_code=403)
     key = path.rstrip("/")
     if key in _CONTAINER_MEMBER_QUERIES or path == "":
@@ -207,7 +313,24 @@ def read_system(
     return Response(content=graph.serialize(format="turtle"), media_type="text/turtle")
 
 
-@router.delete("/{path:path}", status_code=204)
+@router.delete(
+    "/{path:path}",
+    status_code=204,
+    operation_id="revokeSystemResource",
+    summary="Revoke a grant or delete a management record",
+    description=(
+        "Delete the record at this path. Deleting a token record (`tokens/{id}`) revokes "
+        "the grant instantly: the very next request bearing that token — consumer or "
+        "engine — fails with the uniform 401."
+    ),
+    response_class=Response,
+    responses={
+        204: {"description": "Deleted; a revoked token is dead immediately."},
+        401: UNAUTHORIZED,
+        404: {"description": "No record at this path."},
+    },
+    openapi_extra={"security": ADMIN_AUTH},
+)
 def revoke_system(
     path: str, backend: BackendDep, settings: SettingsDep, token: AdminTokenDep
 ) -> Response:

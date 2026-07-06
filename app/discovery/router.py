@@ -18,6 +18,7 @@ from fastapi import APIRouter, Request, Response
 from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
+from app.apidocs import ADMIN_AUTH, CONSUMER_AUTH, UNAUTHORIZED, turtle_response
 from app.discovery.stats import StatsResponse, compute_stats
 from app.ldp.content import link_header
 from app.upstream import (
@@ -68,7 +69,37 @@ async def _describe_member(
         graph.add((pnode, POD_paramType, Literal(param.type)))
 
 
-@router.get("/discovery")
+@router.get(
+    "/discovery",
+    operation_id="discoverViews",
+    summary="List the views this grant unlocks (consumer)",
+    description=(
+        "A consumer client's entry point: an LDP Basic Container, synthesized per "
+        "request, whose members are the views the presented token links. Each member "
+        "carries `dcterms:title`, `dcterms:description`, and one `pod:parameter` node "
+        "per query-string parameter (`pod:paramName`, `pod:paramType` of `str`, `int`, "
+        "or `iri`) the view expects at `/.engine/views/{view_id}`. A grant with no views "
+        "yields a valid empty container."
+    ),
+    response_class=Response,
+    responses={
+        200: turtle_response(
+            "The discovery container.",
+            "@prefix ldp: <http://www.w3.org/ns/ldp#> .\n"
+            "@prefix dcterms: <http://purl.org/dc/terms/> .\n"
+            "@prefix pod: <urn:pod:vocab:> .\n\n"
+            "<https://pod.example/.engine/discovery> a ldp:BasicContainer ;\n"
+            "    ldp:contains <https://pod.example/.engine/views/reading-list> .\n\n"
+            "<https://pod.example/.engine/views/reading-list> a pod:View ;\n"
+            '    dcterms:title "Reading list" ;\n'
+            '    dcterms:description "Public books, filtered by author" ;\n'
+            '    pod:parameter [ pod:paramName "author" ; pod:paramType "str" ] .',
+        ),
+        401: UNAUTHORIZED,
+        502: {"description": "The engine could not reach storage (its credential may be revoked)."},
+    },
+    openapi_extra={"security": CONSUMER_AUTH},
+)
 async def discover(request: Request, storage: StorageDep, token: EngineConsumerDep) -> Response:
     engine_ns = str(request.app.state.engine_ns)
     system_views = str(request.app.state.system_ns) + "views/"
@@ -99,7 +130,19 @@ async def discover(request: Request, storage: StorageDep, token: EngineConsumerD
     )
 
 
-@router.get("/stats")
+@router.get(
+    "/stats",
+    operation_id="getStats",
+    summary="Delivery statistics over the access log (owner)",
+    description=(
+        "Aggregates the immutable access log on demand: total deliveries, a per-view "
+        "breakdown with each view's most recent delivery instant, and a per-grant "
+        "breakdown keyed by token record URI — how often, by whom, and when. Counts "
+        "reflect successful deliveries only, never denied attempts."
+    ),
+    responses={401: UNAUTHORIZED, 502: {"description": "The engine could not reach storage."}},
+    openapi_extra={"security": ADMIN_AUTH},
+)
 async def stats(storage: StorageDep, token: EngineAdminDep) -> StatsResponse:
     # An owner management read over the access log, admin-gated and distinct from the
     # consumer-facing discovery listing above.

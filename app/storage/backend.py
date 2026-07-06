@@ -69,8 +69,19 @@ class StorageBackend(Protocol):
         """
         ...
 
-    def query(self, sparql: str, init_bindings: dict[str, str] | None = None) -> Result:
+    def query(
+        self,
+        sparql: str,
+        init_bindings: dict[str, str] | None = None,
+        include_system: bool = False,
+    ) -> Result:
         """Execute *sparql* against the union of all resource graphs.
+
+        By default the reserved ``.system/`` graphs (views, tokens, policies, the
+        access log) are excluded from evaluation, so a query run on behalf of a
+        view can never read server-managed records. Internal callers that operate
+        on those records pass ``include_system=True``; only that full-dataset scope
+        exposes the named-graph axis, so ``GRAPH`` clauses require it.
 
         Returns the raw rdflib Result (SELECT rows, CONSTRUCT graph, or ASK boolean);
         serialization is the caller's responsibility.

@@ -198,7 +198,9 @@ def validate_token_one_of(
     401 body so validity and type never leak.
     """
     presented_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    result = backend.query(LOOKUP_QUERY, init_bindings={"presented": presented_hash})
+    result = backend.query(
+        LOOKUP_QUERY, init_bindings={"presented": presented_hash}, include_system=True
+    )
     rows = [{str(var): str(term) for var, term in row.items()} for row in result.bindings]
     token_uri, matched_type = match_token_rows(rows, presented_hash, allowed_types)
     try:
@@ -234,7 +236,7 @@ def bootstrap_admin_token(
     value); otherwise a random token is generated and returned so the caller can log it
     once. The plaintext is never persisted — only its hash.
     """
-    if backend.query(_ADMIN_EXISTS_QUERY).askAnswer:
+    if backend.query(_ADMIN_EXISTS_QUERY, include_system=True).askAnswer:
         return None
     if admin_token is not None:
         _write_record(

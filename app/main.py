@@ -5,12 +5,14 @@ from typing import Literal
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
 from app import __version__
+from app.apidocs import SECURITY_SCHEMES
 from app.auth.router import router as system_router
 from app.auth.tokens import bootstrap_admin_token, bootstrap_engine_token
 from app.config import check_tls_precondition, get_settings
@@ -91,7 +93,167 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await http.aclose()
 
 
-app = FastAPI(title="Personal LDP Pod", version=__version__, lifespan=lifespan)
+_API_DESCRIPTION = """\
+A self-hostable personal Linked Data Platform (LDP) pod: RDF and binary storage behind a
+uniform LDP/HTTP surface, a read-only SPARQL 1.1 Protocol endpoint, and a view engine that
+shares named, parameterized SPARQL CONSTRUCT views under revocable bearer tokens with
+per-grant policies. This description plus the per-operation documentation is intended to be
+sufficient, on its own, to build a complete client.
+
+## Credentials
+
+Three bearer tokens exist (see *Authorize* / `securitySchemes` for details):
+
+| Credential | Held by | Surface |
+|---|---|---|
+| **AdminToken** | pod owner | everything: data, `/.system/*`, `/sparql`, `/.engine/stats` |
+| **EngineToken** | the view engine itself | internal storage reads + enforcement writes |
+| **ConsumerToken** | a data consumer | `/.engine/` discovery, views, and blob endpoints |
+
+A frontend for the **pod owner** authenticates every request with the admin token.
+A frontend for a **consumer** needs only the consumer token the owner handed over.
+
+## Data model
+
+Everything the owner manages — data resources, containers, view definitions, grants,
+policies, the access log — is an RDF resource. RDF request and response bodies are
+exchanged in four serializations, negotiated via `Content-Type` / `Accept`:
+`text/turtle` (default), `application/ld+json`, `application/n-triples`,
+`application/rdf+xml`. Any other `Content-Type` on a write stores the body as an opaque
+binary. The system vocabulary uses the prefix `pod:` = `urn:pod:vocab:`;
+`dcterms:` = `http://purl.org/dc/terms/`; `ldp:` = `http://www.w3.org/ns/ldp#`.
+
+## Owner workflow
+
+1. `PUT` / `POST` data anywhere outside the reserved `.system/` and `.engine/` prefixes.
+2. `POST /.system/views` — define a view: a SPARQL CONSTRUCT template plus typed parameters.
+3. `POST /.system/tokens` — mint a grant naming the views it unlocks; capture the one-time
+   `pod:tokenSecret` from the response and hand it to the consumer out of band.
+4. `PUT /.system/tokens/policies/{id}` — optionally bound the grant (expiry, validity
+   window, retrieval count, rate).
+5. `GET /.engine/stats` audits deliveries; `DELETE /.system/tokens/{id}` revokes a grant
+   instantly.
+
+## Consumer workflow
+
+1. `GET /.engine/discovery` — list the views this token unlocks, with their parameter shapes.
+2. `GET /.engine/views/{id}?param=value…` — fetch a view's result.
+3. Results reference other shared resources (including binaries) only through
+   `/.engine/blob/{id}?uri=…` proxy URLs; dereference them with the same token, unchanged.
+
+## Error contract
+
+* Every authentication failure is an identical `401` — the response never reveals whether
+  a token exists, is revoked, or is of the wrong kind.
+* `403` on the consumer surface means the view is outside the grant's scope or a policy
+  constraint denied the request (the JSON `detail` names the violated constraint).
+* `400` unparsable RDF or SPARQL, `409` deleting a non-empty container, `412` failed
+  `If-Match`/`If-None-Match` precondition, `415` unsupported media type, `422` invalid
+  view/policy/parameter shape (the `detail` explains), `502` the engine could not reach
+  storage (e.g. its credential was revoked).
+"""
+
+_TAGS_METADATA = [
+    {"name": "health", "description": "Unauthenticated liveness probe."},
+    {
+        "name": "ldp",
+        "description": (
+            "The pod's data plane: LDP resources, containers, and binaries at arbitrary "
+            "paths. Reads accept the admin or engine token; writes are owner-only. The "
+            "`.system/` and `.engine/` prefixes are reserved and handled by their own "
+            "endpoint groups."
+        ),
+    },
+    {
+        "name": "sparql",
+        "description": (
+            "Read-only SPARQL 1.1 Protocol endpoint over the pod's full RDF data, for the "
+            "owner and the engine (consumers query only through views)."
+        ),
+    },
+    {
+        "name": "views",
+        "description": (
+            "Owner-side management of view definitions: named SPARQL CONSTRUCT templates "
+            "with typed parameters. Reading a definition or listing the catalog is a plain "
+            "`GET` on `/.system/views/…` (see the *system* group)."
+        ),
+    },
+    {
+        "name": "system",
+        "description": (
+            "The reserved `.system/` management tree: minting grants, authoring policies, "
+            "browsing views, tokens, policies, and the access log as LDP containers, and "
+            "revoking records. RDF in and out, like the rest of the pod."
+        ),
+    },
+    {
+        "name": "system-internal",
+        "description": (
+            "Enforcement writes used by the view engine after each delivery. Documented "
+            "for completeness and split deployments; a frontend client never calls these."
+        ),
+    },
+    {
+        "name": "engine",
+        "description": (
+            "The consumer surface: fetch a view's result and dereference the gated proxy "
+            "URLs found inside it. Authenticate with the consumer token from the pod owner."
+        ),
+    },
+    {
+        "name": "discovery",
+        "description": (
+            "Consumer discovery and owner statistics: what a grant unlocks, and how often "
+            "each view was delivered to whom."
+        ),
+    },
+]
+
+app = FastAPI(
+    title="Personal LDP Pod",
+    version=__version__,
+    description=_API_DESCRIPTION,
+    openapi_tags=_TAGS_METADATA,
+    lifespan=lifespan,
+)
+
+
+def _openapi_with_security() -> dict:
+    """The generated schema plus the bearer security schemes.
+
+    Routes reference the schemes by name through ``openapi_extra``; the scheme
+    definitions themselves have no FastAPI dependency to hang off (token
+    validation is a plain header check), so they are attached here.
+    """
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        tags=app.openapi_tags,
+    )
+    schema.setdefault("components", {})["securitySchemes"] = SECURITY_SCHEMES
+    # Raw-bytes body parameters auto-generate an application/json binary placeholder
+    # that survives the openapi_extra merge; drop it wherever a route documented its
+    # real media types.
+    for path_item in schema["paths"].values():
+        for operation in path_item.values():
+            content = operation.get("requestBody", {}).get("content", {})
+            json_schema = content.get("application/json", {}).get("schema", {})
+            is_bytes_placeholder = (
+                json_schema.get("format") == "binary"
+                or json_schema.get("contentMediaType") == "application/octet-stream"
+            )
+            if len(content) > 1 and is_bytes_placeholder:
+                del content["application/json"]
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = _openapi_with_security  # type: ignore[method-assign]
 
 
 @app.exception_handler(UpstreamError)
@@ -106,7 +268,13 @@ class HealthResponse(BaseModel):
     version: str
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["health"],
+    operation_id="healthCheck",
+    summary="Liveness probe",
+    description="Unauthenticated readiness/liveness check reporting the server version.",
+)
 def health() -> HealthResponse:
     return HealthResponse(status="ok", version=__version__)
 

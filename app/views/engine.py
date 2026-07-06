@@ -5,7 +5,9 @@ the token is scoped to the requested view, loads the view definition from its
 ``.system/views/{id}`` record, binds query-string parameters, runs the view's
 CONSTRUCT, serializes the result in the view's declared content type, and bumps
 the enforcement counters — in that order. The CONSTRUCT re-runs on every request;
-nothing is materialized or cached.
+nothing is materialized or cached. It evaluates over the pod's public data only:
+the reserved ``.system/`` records (views, tokens, policies, the access log) are
+excluded from the storage query scope by default, so no view can leak them.
 
 Every storage interaction crosses the engine->storage HTTP boundary through the
 :class:`~app.upstream.StorageClient` under the engine's own credential: record
@@ -31,6 +33,7 @@ from fastapi.responses import StreamingResponse
 from rdflib import Graph, URIRef
 from starlette.background import BackgroundTask
 
+from app.apidocs import CONSUMER_AUTH, UNAUTHORIZED, rdf_response
 from app.config import SettingsDep
 from app.ldp.content import rdflib_format_for
 from app.policy.enforce import check_policy
@@ -84,7 +87,36 @@ async def _record_delivery(
     await storage.append_access_log(view_uri, token_uri, now)
 
 
-@router.get("/views/{view_id}")
+@router.get(
+    "/views/{view_id}",
+    operation_id="getViewResult",
+    summary="Fetch a view's result (consumer)",
+    description=(
+        "Run the view's CONSTRUCT and return the result in the view's declared content "
+        "type. The bearer token must link this view (discover ids and parameter shapes "
+        "at `/.engine/discovery`). Supply every declared parameter as a query-string "
+        "field, `?name=value`. Pod-local resource references in the result — including "
+        "binaries — are rewritten to `/.engine/blob/{view_id}?…` proxy URLs; dereference "
+        "them as-is with the same token. Each successful delivery counts against the "
+        "grant's policy ceilings; a denial is a `403` whose `detail` names the violated "
+        "constraint (e.g. `policy: max retrievals reached`)."
+    ),
+    response_class=Response,
+    responses={
+        200: rdf_response("The view result, serialized as the view's content-type hint."),
+        401: UNAUTHORIZED,
+        403: {
+            "description": (
+                "The view is outside this grant's scope, or a policy constraint denied "
+                "the request (`detail` names it)."
+            )
+        },
+        404: {"description": "No view definition at this id."},
+        422: {"description": "A declared parameter is missing or fails its type check."},
+        502: {"description": "The engine could not reach storage (its credential may be revoked)."},
+    },
+    openapi_extra={"security": CONSUMER_AUTH},
+)
 async def get_view(
     view_id: str,
     request: Request,
@@ -123,7 +155,65 @@ async def get_view(
     return Response(content=body, media_type=view.content_type_hint)
 
 
-@router.get("/blob/{view_id}")
+@router.get(
+    "/blob/{view_id}",
+    operation_id="getViewBlob",
+    summary="Dereference a proxied resource from a view result (consumer)",
+    description=(
+        "The gated proxy behind the rewritten URLs inside view results. Clients normally "
+        "dereference those URLs verbatim — they already carry `uri` and the view's "
+        "parameter bindings. The engine re-validates the token and scope, re-runs the "
+        "view's CONSTRUCT with the supplied bindings, confirms the target still appears "
+        "in the current result, and only then streams the resource with its stored media "
+        "type. Deliveries count against the same policy ceilings as the primary view."
+    ),
+    response_class=Response,
+    responses={
+        200: {
+            "description": "The resource bytes with their stored media type.",
+            "content": {
+                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+            },
+        },
+        400: {
+            "description": (
+                "`uri` missing, it does not name a pod-local resource, or it names a "
+                "reserved `.system/` record."
+            )
+        },
+        401: UNAUTHORIZED,
+        403: {
+            "description": (
+                "The view is outside this grant's scope, or a policy constraint denied "
+                "the request (`detail` names it)."
+            )
+        },
+        404: {
+            "description": (
+                "No view at this id, the target no longer appears in the view's current "
+                "result, or the upstream resource is gone."
+            )
+        },
+        422: {"description": "A declared parameter is missing or fails its type check."},
+        502: {"description": "The engine could not reach storage (its credential may be revoked)."},
+    },
+    openapi_extra={
+        "security": CONSUMER_AUTH,
+        "parameters": [
+            {
+                "name": "uri",
+                "in": "query",
+                "required": True,
+                "schema": {"type": "string"},
+                "description": (
+                    "The pod-local URI of the shared resource, percent-encoded — present "
+                    "in rewritten proxy URLs already. The view's declared parameters must "
+                    "accompany it with the same values used on the primary fetch."
+                ),
+            }
+        ],
+    },
+)
 async def get_blob(
     view_id: str,
     request: Request,
@@ -142,6 +232,11 @@ async def get_blob(
         raise HTTPException(status_code=400)
     # Open-proxy guard: only pod-local URIs may be dereferenced through this endpoint.
     if not upstream_uri.startswith(settings.base_uri):
+        raise HTTPException(status_code=400)
+    # A reserved .system/ record is never a legitimate view result. Refusing it
+    # up front keeps the proxy from streaming server-managed records even if a
+    # CONSTRUCT template emits one of their URIs as a constant.
+    if upstream_uri.startswith(str(request.app.state.system_ns)):
         raise HTTPException(status_code=400)
 
     graph, view = await _load_view(storage, view_uri)

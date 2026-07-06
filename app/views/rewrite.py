@@ -20,6 +20,7 @@ from rdflib import Graph, URIRef
 from rdflib.term import Node
 
 from app.upstream import StorageClient
+from app.vocab import make_system_ns
 
 _RESOURCE_URIS_QUERY = "SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } }"
 
@@ -47,7 +48,17 @@ async def rewrite_upstream_uris(
     if not candidates:
         return graph
 
-    existing = {row["g"] for row in await storage.select(_RESOURCE_URIS_QUERY) if "g" in row}
+    # Graph names live on the dataset's named-graph axis, which the default
+    # system-excluding query scope does not expose, so this constant query opts
+    # into the full dataset. The reserved .system/ names are dropped right here:
+    # a server-managed record is never a rewrite target, so no proxy URL can be
+    # minted for one even if a template smuggles its URI into the result.
+    system_prefix = str(make_system_ns(base_uri))
+    existing = {
+        row["g"]
+        for row in await storage.select(_RESOURCE_URIS_QUERY, include_system=True)
+        if "g" in row and not row["g"].startswith(system_prefix)
+    }
     mapping: dict[URIRef, URIRef] = {}
     for uri in candidates:
         if str(uri) in existing:

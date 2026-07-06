@@ -13,11 +13,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from rdflib import Dataset, Graph, Literal, URIRef
+from rdflib.graph import ReadOnlyGraphAggregate
 from rdflib.namespace import RDF, XSD
 from rdflib.query import Result
 
 from app.storage.backend import NotABinaryResource, ResourceNotFound, StorageError
-from app.storage.system import assert_public_uri, ensure_system_subtree
+from app.storage.system import SYSTEM_SEGMENT, assert_public_uri, ensure_system_subtree
 from app.vocab import (
     DC_format,
     LDP_NonRDFSource,
@@ -77,6 +78,7 @@ class FilesystemBackend:
     def __init__(self, storage_root: Path, base_uri: str) -> None:
         self._storage_root = storage_root
         self._base_uri = base_uri
+        self._system_prefix = base_uri.rstrip("/") + "/" + SYSTEM_SEGMENT + "/"
         # The Dataset is not thread-safe; this guards every read-modify-write
         # so concurrent threadpool requests cannot corrupt the in-memory store.
         self._lock = threading.RLock()
@@ -96,7 +98,7 @@ class FilesystemBackend:
                 else:
                     uri = _path_to_uri(path, storage_root, base_uri)
                 context = self._graph.graph(URIRef(uri))
-                context.parse(data=path.read_text(encoding="utf-8"), format="turtle")
+                context.parse(data=path.read_text(encoding="utf-8"), format="turtle", publicID=uri)
 
     def read(self, uri: str) -> Graph:
         path = _guard_within_root(
@@ -128,7 +130,7 @@ class FilesystemBackend:
             path.write_text(serialized, encoding="utf-8")
             self._graph.remove_graph(self._graph.graph(URIRef(uri)))
             self._graph.graph(URIRef(uri)).parse(
-                data=path.read_text(encoding="utf-8"), format="turtle"
+                data=path.read_text(encoding="utf-8"), format="turtle", publicID=uri
             )
 
     def write_binary(self, uri: str, data: bytes, content_type: str) -> None:
@@ -149,7 +151,7 @@ class FilesystemBackend:
             meta_path.write_text(serialized, encoding="utf-8")
             self._graph.remove_graph(self._graph.graph(subject))
             self._graph.graph(subject).parse(
-                data=meta_path.read_text(encoding="utf-8"), format="turtle"
+                data=meta_path.read_text(encoding="utf-8"), format="turtle", publicID=uri
             )
 
     def delete(self, uri: str) -> None:
@@ -223,11 +225,29 @@ class FilesystemBackend:
             while chunk := f.read(chunk_size):
                 yield chunk
 
-    def query(self, sparql: str, init_bindings: dict[str, str] | None = None) -> Result:
+    def query(
+        self,
+        sparql: str,
+        init_bindings: dict[str, str] | None = None,
+        include_system: bool = False,
+    ) -> Result:
         bindings = None
         if init_bindings is not None:
             bindings = {var: _to_term(value) for var, value in init_bindings.items()}
         # The Dataset was built with default_union, so a plain `?s ?p ?o` pattern
         # sees every resource without a GRAPH wrapper.
         with self._lock:
-            return self._graph.query(sparql, initBindings=bindings)
+            if include_system:
+                return self._graph.query(sparql, initBindings=bindings)
+            # Default scope: an aggregate of every named graph outside .system/, so
+            # server-managed records (token hashes, policies, the access log) stay
+            # invisible unless a caller explicitly opts in. The aggregate is backed
+            # by a throwaway store, so it carries no named-graph axis — GRAPH
+            # clauses match nothing in this scope.
+            public = [
+                graph
+                for graph in self._graph.graphs()
+                if not str(graph.identifier).startswith(self._system_prefix)
+            ]
+            scope: Graph = ReadOnlyGraphAggregate(public) if public else Graph()
+            return scope.query(sparql, initBindings=bindings)

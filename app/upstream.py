@@ -83,12 +83,22 @@ class StorageClient:
         graph.parse(data=response.text, format="turtle")
         return graph
 
-    async def _query(self, sparql: str, bindings: dict[str, str] | None, accept: str):
+    async def _query(
+        self,
+        sparql: str,
+        bindings: dict[str, str] | None,
+        accept: str,
+        include_system: bool,
+    ):
         # Parameter values travel as binding-<name> protocol extension fields and are
         # bound server-side via initBindings — never spliced into the query text.
         data = {"query": sparql}
         if bindings:
             data.update({f"binding-{name}": value for name, value in bindings.items()})
+        # Queries evaluate over the pod's public data by default; the .system/
+        # records stay out of scope unless the caller opts in explicitly.
+        if include_system:
+            data["include-system"] = "true"
         response = await self._http.post(
             self._storage_base + "sparql",
             data=data,
@@ -97,16 +107,26 @@ class StorageClient:
         self._expect(response, 200)
         return response
 
-    async def construct(self, sparql: str, bindings: dict[str, str] | None = None) -> Graph:
-        response = await self._query(sparql, bindings, "text/turtle")
+    async def construct(
+        self,
+        sparql: str,
+        bindings: dict[str, str] | None = None,
+        include_system: bool = False,
+    ) -> Graph:
+        response = await self._query(sparql, bindings, "text/turtle", include_system)
         graph = Graph()
         graph.parse(data=response.text, format="turtle")
         return graph
 
     async def select(
-        self, sparql: str, bindings: dict[str, str] | None = None
+        self,
+        sparql: str,
+        bindings: dict[str, str] | None = None,
+        include_system: bool = False,
     ) -> list[dict[str, str]]:
-        response = await self._query(sparql, bindings, "application/sparql-results+json")
+        response = await self._query(
+            sparql, bindings, "application/sparql-results+json", include_system
+        )
         rows = response.json()["results"]["bindings"]
         return [{name: cell["value"] for name, cell in row.items()} for row in rows]
 
@@ -160,7 +180,9 @@ async def validate_via_storage(
     helpers, so the two validators cannot drift.
     """
     presented_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    rows = await storage.select(LOOKUP_QUERY, bindings={"presented": presented_hash})
+    rows = await storage.select(
+        LOOKUP_QUERY, bindings={"presented": presented_hash}, include_system=True
+    )
     token_uri, matched_type = match_token_rows(rows, presented_hash, (required_type,))
     try:
         record = await storage.read_graph(token_uri)

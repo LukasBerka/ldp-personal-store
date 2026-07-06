@@ -79,18 +79,24 @@ def rdflib_format_for(content_type: str) -> str:
     return FORMAT_BY_CONTENT_TYPE[normalize_media_type(content_type)]
 
 
-def parse_rdf_body(body: bytes, content_type: str | None) -> Graph:
+def parse_rdf_body(body: bytes, content_type: str | None, base_uri: str | None = None) -> Graph:
     """Parse a request body as RDF, or raise 415 (non-RDF type) / 400 (bad syntax).
 
     The shared guard for management routes that accept RDF representations, so the
     system surface admits exactly the same serializations as the LDP data plane.
+
+    *base_uri* is the document base against which relative IRIs — most importantly
+    the null relative IRI ``<>`` naming the resource itself — are resolved. Pass the
+    target resource URI so ``<>`` becomes that resource; without it rdflib falls back
+    to the server's working directory as a ``file://`` base, silently storing bogus
+    ``file:///…/`` subjects.
     """
     normalized = normalize_media_type(content_type)
     if normalized not in RDF_CONTENT_TYPES:
         raise HTTPException(status_code=415)
     graph = Graph()
     try:
-        graph.parse(data=body, format=FORMAT_BY_CONTENT_TYPE[normalized])
+        graph.parse(data=body, format=FORMAT_BY_CONTENT_TYPE[normalized], publicID=base_uri)
     except Exception as exc:  # rdflib parse errors span several exception types
         raise HTTPException(status_code=400, detail=f"Invalid RDF body: {exc}") from exc
     return graph

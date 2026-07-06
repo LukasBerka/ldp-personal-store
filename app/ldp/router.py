@@ -17,6 +17,14 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from rdflib import Graph, URIRef
 
+from app.apidocs import (
+    ADMIN_AUTH,
+    STORAGE_AUTH,
+    UNAUTHORIZED,
+    Responses,
+    rdf_content,
+    rdf_response,
+)
 from app.auth.deps import get_admin_token, get_storage_token
 from app.config import SettingsDep
 from app.ldp.containers import (
@@ -38,7 +46,7 @@ from app.ldp.content import (
     link_header,
     negotiate,
     normalize_media_type,
-    rdflib_format_for,
+    parse_rdf_body,
 )
 from app.ldp.deps import BackendDep, http_error
 from app.storage.backend import (
@@ -66,6 +74,114 @@ _WRITE = [Depends(get_admin_token)]
 
 _RDF_LINK = link_header([LDP_Resource, LDP_RDFSource])
 _BINARY_LINK = link_header([LDP_Resource, LDP_NonRDFSource])
+
+# OpenAPI text for the catch-all data plane. OpenAPI cannot express a
+# resource-oriented protocol structurally, so the LDP semantics a client needs —
+# negotiation, ETags, containment, the RDF/binary split — live in these
+# descriptions.
+_GET_DESCRIPTION = """\
+Dereference the resource at this pod-relative path: an RDF document, an LDP container, \
+or a stored binary.
+
+* RDF responses are negotiated via `Accept` among the four supported serializations \
+(default `text/turtle`). Binaries return the media type recorded when they were stored \
+and ignore `Accept`.
+* Container representations list members as `ldp:contains` triples; Direct Containers \
+additionally synthesize their membership triples into the response.
+* Every response carries an `ETag` (echo it in `If-None-Match` to get `304`), a `Link` \
+header advertising the resource's LDP types (`rel="type"`), and an `Allow` header naming \
+the verbs the resource supports.
+* `HEAD` is also accepted: same status and headers, no body.
+"""
+
+_GET_RESPONSES: Responses = {
+    200: rdf_response(
+        "The representation. A binary streams as its stored media type instead "
+        "(any type, not only the RDF four)."
+    ),
+    304: {"description": "Representation unchanged (`If-None-Match` matched); no body."},
+    401: UNAUTHORIZED,
+    404: {"description": "No resource at this path."},
+}
+
+_PUT_DESCRIPTION = """\
+Create or replace the resource at this exact path.
+
+* `Content-Type` selects the write path: one of the four RDF media types is parsed and \
+stored as an RDF resource; any other type (or none) is stored verbatim as a binary.
+* A body whose subject is typed `ldp:BasicContainer` (or another container type) creates \
+a container.
+* Preconditions: `If-Match: <etag>` guards a replace against lost updates; \
+`If-None-Match: *` makes the request create-only.
+* Containment is server-managed: `ldp:contains` triples in the body are ignored (stored \
+ones are preserved), and a newly created resource is added to its parent container's \
+listing automatically.
+"""
+
+_PUT_BODY = {
+    "required": True,
+    "description": (
+        "The new representation: RDF in one of the four supported media types, or any "
+        "other media type to store the bytes as a binary."
+    ),
+    "content": {
+        **rdf_content(
+            "@prefix dcterms: <http://purl.org/dc/terms/> .\n\n"
+            '<> dcterms:title "Meeting notes" ;\n'
+            '   dcterms:description "Notes from the 2026-07-01 sync" .'
+        ),
+        "application/octet-stream": {"schema": {"type": "string", "format": "binary"}},
+    },
+}
+
+_PUT_RESPONSES: Responses = {
+    200: {"description": "Replaced. Headers as on create."},
+    201: {
+        "description": (
+            "Created. `Location` names the resource; `ETag` identifies the stored representation."
+        )
+    },
+    400: {"description": "The RDF body does not parse in the declared `Content-Type`."},
+    401: UNAUTHORIZED,
+    403: {"description": "The path lies under the reserved `.system/` prefix."},
+    412: {"description": "`If-Match` / `If-None-Match` precondition failed."},
+}
+
+_POST_DESCRIPTION = """\
+Create a member inside the container at this path.
+
+The member URI is minted by the server (a `Slug` header is honored when free); it is \
+returned in `Location` and added to the container's `ldp:contains`. The body follows the \
+same RDF/binary split as `PUT`.
+"""
+
+_POST_RESPONSES: Responses = {
+    201: {"description": "Member created; `Location` names it."},
+    400: {"description": "The RDF body does not parse in the declared `Content-Type`."},
+    401: UNAUTHORIZED,
+    403: {"description": "The path lies under the reserved `.system/` prefix."},
+    404: {"description": "No resource at this path."},
+    405: {"description": "The target exists but is not a container; `Allow` lists its verbs."},
+}
+
+_DELETE_RESPONSES: Responses = {
+    204: {"description": "Deleted; the parent container's listing is updated."},
+    401: UNAUTHORIZED,
+    403: {"description": "The path lies under the reserved `.system/` prefix."},
+    404: {"description": "No resource at this path."},
+    409: {"description": "The container still has members; delete them first."},
+}
+
+_OPTIONS_RESPONSES: Responses = {
+    200: {
+        "description": (
+            "`Allow` lists the verbs this specific resource supports (containers add "
+            "`POST`, binaries drop it)."
+        )
+    },
+    401: UNAUTHORIZED,
+    404: {"description": "No resource at this path."},
+}
 
 
 def _with_direct_membership(graph: Graph, uri: str) -> Graph:
@@ -186,8 +302,7 @@ def _put_rdf_resource(
     except StorageError as exc:
         raise http_error(exc) from exc
     check_preconditions(if_match, if_none_match, current_etag, exists)
-    graph = Graph()
-    graph.parse(data=body, format=rdflib_format_for(content_type))
+    graph = parse_rdf_body(body, content_type, base_uri=uri)
     stored_is_container = stored is not None and container_kind(stored, uri) is not None
     if stored_is_container or container_kind(graph, uri) is not None:
         # ldp:contains is server-managed: discard any client-supplied containment
@@ -290,8 +405,7 @@ def _post_member(
     # atomic at the HTTP level; acceptable for a single-user pod.
     try:
         if normalized_ct in RDF_CONTENT_TYPES:
-            member_graph = Graph()
-            member_graph.parse(data=body, format=rdflib_format_for(normalized_ct))
+            member_graph = parse_rdf_body(body, normalized_ct, base_uri=member_uri)
             backend.write(member_uri, member_graph)
             etag, link, allow = etag_for_graph(member_graph), _RDF_LINK, ALLOW_RDF
         else:
@@ -351,7 +465,16 @@ def _detach_from_parent(backend: StorageBackend, base_uri: str, member_uri: str)
         raise http_error(exc) from exc
 
 
-@router.api_route("/", methods=["GET", "HEAD"], dependencies=_READ)
+@router.get(
+    "/",
+    dependencies=_READ,
+    operation_id="getRoot",
+    summary="Read the pod root container",
+    description=_GET_DESCRIPTION,
+    response_class=Response,
+    responses=_GET_RESPONSES,
+    openapi_extra={"security": STORAGE_AUTH},
+)
 def get_root(
     backend: BackendDep,
     settings: SettingsDep,
@@ -361,7 +484,16 @@ def get_root(
     return _get_resource(backend, settings.base_uri, "", accept, if_none_match)
 
 
-@router.api_route("/{path:path}", methods=["GET", "HEAD"], dependencies=_READ)
+@router.get(
+    "/{path:path}",
+    dependencies=_READ,
+    operation_id="getResource",
+    summary="Read a resource, container, or binary",
+    description=_GET_DESCRIPTION,
+    response_class=Response,
+    responses=_GET_RESPONSES,
+    openapi_extra={"security": STORAGE_AUTH},
+)
 def get_resource(
     path: str,
     backend: BackendDep,
@@ -372,7 +504,16 @@ def get_resource(
     return _get_resource(backend, settings.base_uri, path, accept, if_none_match)
 
 
-@router.put("/", dependencies=_WRITE)
+@router.put(
+    "/",
+    dependencies=_WRITE,
+    operation_id="putRoot",
+    summary="Replace the pod root container's description",
+    description=_PUT_DESCRIPTION,
+    response_class=Response,
+    responses=_PUT_RESPONSES,
+    openapi_extra={"security": ADMIN_AUTH, "requestBody": _PUT_BODY},
+)
 def put_root(
     backend: BackendDep,
     settings: SettingsDep,
@@ -386,7 +527,16 @@ def put_root(
     )
 
 
-@router.put("/{path:path}", dependencies=_WRITE)
+@router.put(
+    "/{path:path}",
+    dependencies=_WRITE,
+    operation_id="putResource",
+    summary="Create or replace a resource at a chosen path",
+    description=_PUT_DESCRIPTION,
+    response_class=Response,
+    responses=_PUT_RESPONSES,
+    openapi_extra={"security": ADMIN_AUTH, "requestBody": _PUT_BODY},
+)
 def put_resource(
     path: str,
     backend: BackendDep,
@@ -401,7 +551,16 @@ def put_resource(
     )
 
 
-@router.post("/", dependencies=_WRITE)
+@router.post(
+    "/",
+    dependencies=_WRITE,
+    operation_id="postToRoot",
+    summary="Create a member in the pod root container",
+    description=_POST_DESCRIPTION,
+    response_class=Response,
+    responses=_POST_RESPONSES,
+    openapi_extra={"security": ADMIN_AUTH, "requestBody": _PUT_BODY},
+)
 def post_root(
     backend: BackendDep,
     settings: SettingsDep,
@@ -412,7 +571,16 @@ def post_root(
     return _post_member(backend, settings.base_uri, "", body, content_type, slug)
 
 
-@router.post("/{path:path}", dependencies=_WRITE)
+@router.post(
+    "/{path:path}",
+    dependencies=_WRITE,
+    operation_id="postToContainer",
+    summary="Create a member in a container",
+    description=_POST_DESCRIPTION,
+    response_class=Response,
+    responses=_POST_RESPONSES,
+    openapi_extra={"security": ADMIN_AUTH, "requestBody": _PUT_BODY},
+)
 def post_resource(
     path: str,
     backend: BackendDep,
@@ -424,7 +592,20 @@ def post_resource(
     return _post_member(backend, settings.base_uri, path, body, content_type, slug)
 
 
-@router.delete("/{path:path}", status_code=204, dependencies=_WRITE)
+@router.delete(
+    "/{path:path}",
+    status_code=204,
+    dependencies=_WRITE,
+    operation_id="deleteResource",
+    summary="Delete a resource, empty container, or binary",
+    description=(
+        "Remove the resource at this path and drop it from its parent container's "
+        "listing. A container must be emptied of members first."
+    ),
+    response_class=Response,
+    responses=_DELETE_RESPONSES,
+    openapi_extra={"security": ADMIN_AUTH},
+)
 def delete_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Response:
     uri = settings.base_uri + path
     # A binary resource is invisible to read (only its sidecar exists), so a
@@ -472,11 +653,32 @@ def _options_response(backend: StorageBackend, base_uri: str, path: str) -> Resp
     return Response(status_code=200, headers={"Allow": allow})
 
 
-@router.options("/", dependencies=_READ)
+@router.options(
+    "/",
+    dependencies=_READ,
+    operation_id="optionsRoot",
+    summary="Capabilities of the pod root",
+    description="Report, via the `Allow` header, the verbs the pod root supports.",
+    response_class=Response,
+    responses=_OPTIONS_RESPONSES,
+    openapi_extra={"security": STORAGE_AUTH},
+)
 def options_root(backend: BackendDep, settings: SettingsDep) -> Response:
     return _options_response(backend, settings.base_uri, "")
 
 
-@router.options("/{path:path}", dependencies=_READ)
+@router.options(
+    "/{path:path}",
+    dependencies=_READ,
+    operation_id="optionsResource",
+    summary="Capabilities of a resource",
+    description=(
+        "Report, via the `Allow` header, the verbs the resource at this path actually "
+        "supports: containers add `POST`, binaries drop it."
+    ),
+    response_class=Response,
+    responses=_OPTIONS_RESPONSES,
+    openapi_extra={"security": STORAGE_AUTH},
+)
 def options_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Response:
     return _options_response(backend, settings.base_uri, path)

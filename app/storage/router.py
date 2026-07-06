@@ -19,6 +19,7 @@ from pydantic import BaseModel, field_validator
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF, XSD
 
+from app.apidocs import STORAGE_AUTH, UNAUTHORIZED, Responses
 from app.auth.deps import StorageTokenDep
 from app.ldp.deps import BackendDep
 from app.policy.enforce import parse_xsd_datetime
@@ -60,7 +61,28 @@ class AccessLogAppend(BaseModel):
     _check_timestamp = field_validator("timestamp")(_valid_xsd_datetime)
 
 
-@router.post("/tokens/{record_id}/enforcement", status_code=204)
+_INTERNAL_NOTE = (
+    "Internal engine-plane write, documented for completeness and split deployments; "
+    "a frontend client never calls this."
+)
+
+_INTERNAL_RESPONSES: Responses = {
+    204: {"description": "Recorded."},
+    401: UNAUTHORIZED,
+    404: {"description": "No record at this id."},
+}
+
+
+@router.post(
+    "/tokens/{record_id}/enforcement",
+    status_code=204,
+    operation_id="bumpTokenEnforcement",
+    summary="Update a grant's delivery counter (engine-internal)",
+    description=_INTERNAL_NOTE,
+    response_class=Response,
+    responses=_INTERNAL_RESPONSES,
+    openapi_extra={"security": STORAGE_AUTH},
+)
 def bump_token_enforcement(
     record_id: str,
     request: Request,
@@ -77,7 +99,16 @@ def bump_token_enforcement(
     return Response(status_code=204)
 
 
-@router.post("/views/{view_id}/enforcement", status_code=204)
+@router.post(
+    "/views/{view_id}/enforcement",
+    status_code=204,
+    operation_id="bumpViewEnforcement",
+    summary="Update a view's delivery counter (engine-internal)",
+    description=_INTERNAL_NOTE,
+    response_class=Response,
+    responses=_INTERNAL_RESPONSES,
+    openapi_extra={"security": STORAGE_AUTH},
+)
 def bump_view_enforcement(
     view_id: str,
     request: Request,
@@ -94,7 +125,16 @@ def bump_view_enforcement(
     return Response(status_code=204)
 
 
-@router.post("/access-log", status_code=204)
+@router.post(
+    "/access-log",
+    status_code=204,
+    operation_id="appendAccessLog",
+    summary="Append an access-log entry (engine-internal)",
+    description=_INTERNAL_NOTE,
+    response_class=Response,
+    responses={204: {"description": "Appended."}, 401: UNAUTHORIZED},
+    openapi_extra={"security": STORAGE_AUTH},
+)
 def append_access_log(
     request: Request,
     backend: BackendDep,

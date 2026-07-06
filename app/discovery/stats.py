@@ -7,7 +7,9 @@ per-consumer breakdown keyed by the authorizing token record — UC7's "how many
 times each has been accessed, by which consumers, and when". The engine runs all
 three aggregations over the storage boundary's SPARQL endpoint, where every log
 entry is its own named-graph context in the backend's union graph, so a
-graph-clause-free WHERE sees them all.
+graph-clause-free WHERE sees them all. Log entries live under the reserved
+``.system/`` subtree, which the query scope excludes by default, so every
+aggregation opts in with ``include_system``.
 """
 
 from pydantic import BaseModel
@@ -54,12 +56,12 @@ class StatsResponse(BaseModel):
 async def compute_stats(storage: StorageClient) -> StatsResponse:
     """Aggregate the access log into a total plus per-view and per-consumer breakdowns."""
     total = 0
-    for row in await storage.select(_TOTAL_SPARQL):
+    for row in await storage.select(_TOTAL_SPARQL, include_system=True):
         if "total" in row:
             total = int(row["total"])
 
     by_view: list[ViewCount] = []
-    for row in await storage.select(_BY_VIEW_SPARQL):
+    for row in await storage.select(_BY_VIEW_SPARQL, include_system=True):
         if "view" not in row or "count" not in row:
             continue
         by_view.append(
@@ -71,7 +73,7 @@ async def compute_stats(storage: StorageClient) -> StatsResponse:
         )
 
     by_token: list[TokenCount] = []
-    for row in await storage.select(_BY_TOKEN_SPARQL):
+    for row in await storage.select(_BY_TOKEN_SPARQL, include_system=True):
         if "token" not in row or "count" not in row:
             continue
         by_token.append(TokenCount(token_uri=row["token"], count=int(row["count"])))

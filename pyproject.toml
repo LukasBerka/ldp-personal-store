@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "LukasBerka", email = "lukasberkacek@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi[standard]>=0.136.3",
     "httpx>=0.28.1",
@@ -26,7 +26,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py314"
 src = ["."]
 
 [tool.ruff.lint]
@@ -35,7 +35,7 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
 [tool.pyrefly]
 project-includes = ["app", "tests"]
 search-path = ["."]
-python-version = "3.13"
+python-version = "3.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
