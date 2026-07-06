@@ -2,16 +2,9 @@ services:
   pod:
     build: .
     ports:
-      # Published on the host loopback only, so the plaintext port never
-      # reaches a public interface — matching the trust assumption of
-      # LDP_TLS_MODE=terminated. A public deployment fronts this with a
-      # TLS-terminating reverse proxy instead of widening the bind.
       - "127.0.0.1:8000:8000"
     environment:
       LDP_BASE_URI: "http://localhost:8000/"
-      # LDP_ADMIN_TOKEN is required: the pod refuses to start without it and never
-      # writes the plaintext to the log. Provide it from the host environment or an
-      # .env file; the `:?` guard makes `docker compose up` fail fast when it is unset.
       LDP_ADMIN_TOKEN: ${LDP_ADMIN_TOKEN:?set LDP_ADMIN_TOKEN before starting the pod}
     volumes:
       - pod-data:/data

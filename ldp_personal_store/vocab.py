@@ -1,8 +1,4 @@
 """RDF namespaces and vocabulary terms for the Personal LDP Pod.
-
-Every term the pod uses is declared here as a typed constant so that call-sites
-can import names directly (e.g. ``from ldp_personal_store.vocab import LDP_contains``) rather
-than accessing dynamic namespace attributes.
 """
 
 from rdflib.namespace import Namespace

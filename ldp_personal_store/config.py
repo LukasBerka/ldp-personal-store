@@ -1,8 +1,4 @@
 """Application configuration for the Personal LDP Pod.
-
-Defines the :class:`Settings` model (loaded from environment / ``.env`` with the
-``LDP_`` prefix), the cached :func:`get_settings` singleton, a FastAPI dependency
-alias, and the boot-time TLS precondition check.
 """
 
 from functools import lru_cache

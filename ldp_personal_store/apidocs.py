@@ -1,11 +1,4 @@
 """OpenAPI documentation metadata shared by the HTTP routers.
-
-Everything in this module feeds the generated schema (``/openapi.json``,
-rendered interactively at ``/docs`` and ``/redoc``); nothing here participates
-in request handling. The schema is written to stand alone: a client author —
-human or code-generating agent — who has never seen this codebase finds every
-operation's credential, media types, error contract, and a runnable example in
-the schema itself.
 """
 
 from typing import Any
