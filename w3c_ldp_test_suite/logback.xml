@@ -1,0 +1,15 @@
+<!-- The suite pulls logback transitively with no config, so its root logger
+     defaults to DEBUG and floods stdout with full HTTP-wire dumps (Apache
+     HttpClient's logs route here via jcl-over-slf4j). Pin the root to WARN so the
+     run logs show the suite's own progress/summary (printed to stdout directly)
+     without the per-request noise. Raise to INFO/DEBUG to debug the harness. -->
+<configuration>
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss} %-5level %logger{0} - %msg%n</pattern>
+    </encoder>
+  </appender>
+  <root level="WARN">
+    <appender-ref ref="STDOUT"/>
+  </root>
+</configuration>

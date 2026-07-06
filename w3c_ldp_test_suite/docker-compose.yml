@@ -1,0 +1,50 @@
+name: ldp-conformance
+
+services:
+  pod:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      # Resource-URI namespace = the proxy the suite reaches the pod through.
+      LDP_BASE_URI: "http://proxy:9000/"
+      LDP_ADMIN_TOKEN: "${LDP_ADMIN_TOKEN:?run via run.sh, which sets this}"
+      # Ephemeral pod: no named volume, so every run starts from a clean root.
+      LDP_STORAGE_ROOT: "/data"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+
+  proxy:
+    image: python:3.14-slim
+    depends_on:
+      pod:
+        condition: service_healthy
+    environment:
+      LDP_ADMIN_TOKEN: "${LDP_ADMIN_TOKEN:?run via run.sh, which sets this}"
+      UPSTREAM_HOST: "pod"
+      UPSTREAM_PORT: "8000"
+      PROXY_PORT: "9000"
+    volumes:
+      - ./auth_proxy.py:/conf/auth_proxy.py:ro
+    command: ["python", "/conf/auth_proxy.py"]
+    # Published to host loopback for ad-hoc curling/debugging; the suite does not
+    # rely on this — it reaches the proxy in-network by name.
+    ports:
+      - "127.0.0.1:9000:9000"
+
+  # Run on demand via `docker compose run --rm suite <args>`; never started by `up`.
+  suite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["manual"]
+    depends_on:
+      pod:
+        condition: service_healthy
+    volumes:
+      - ./reports:/out

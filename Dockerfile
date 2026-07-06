@@ -7,7 +7,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-COPY app ./app
+COPY ldp_personal_store ./ldp_personal_store
 
 # A container is reached over a virtual network interface, never its own
 # loopback, so the pod must bind 0.0.0.0; tls_mode=off refuses exactly that
@@ -20,4 +20,4 @@ ENV LDP_HOST=0.0.0.0 \
 VOLUME /data
 EXPOSE 8000
 
-CMD ["python", "-m", "app.main"]
+CMD ["python", "-m", "ldp_personal_store.main"]

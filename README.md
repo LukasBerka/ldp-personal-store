@@ -27,7 +27,7 @@ never has to be activated manually.
 The recommended command starts a working pod with **zero configuration** required:
 
 ```sh
-uv run python -m app.main
+uv run python -m ldp_personal_store.main
 ```
 
 With no environment variables set it boots on `http://127.0.0.1:8000/` using every
@@ -45,7 +45,7 @@ their own defaults, which can diverge from `LDP_HOST` and defeat the preconditio
 For an autoreloading dev server, use the explicit dev-mode alternative:
 
 ```sh
-uv run fastapi dev app/main.py
+uv run fastapi dev ldp_personal_store/main.py
 ```
 
 ## Run with Docker
@@ -77,21 +77,21 @@ variable (or a `.env` file). **None are required for a loopback pod.**
 | `LDP_HOST` | `127.0.0.1` | Bind interface; also drives the TLS precondition below. |
 | `LDP_PORT` | `8000` | Bind port. |
 | `LDP_TLS_MODE` | `off` | `off` \| `required` \| `terminated` (see below). |
-| `LDP_SSL_KEYFILE` | unset | TLS private key for `tls_mode=required`; forwarded to uvicorn by `python -m app.main`. |
-| `LDP_SSL_CERTFILE` | unset | TLS certificate for `tls_mode=required`; forwarded to uvicorn by `python -m app.main`. |
+| `LDP_SSL_KEYFILE` | unset | TLS private key for `tls_mode=required`; forwarded to uvicorn by `python -m ldp_personal_store.main`. |
+| `LDP_SSL_CERTFILE` | unset | TLS certificate for `tls_mode=required`; forwarded to uvicorn by `python -m ldp_personal_store.main`. |
 | `LDP_ADMIN_TOKEN` | unset | Plaintext admin token to seed deterministically. Left unset, a random token is generated and logged once at boot. |
 | `LDP_RELOAD` | `false` | Dev-only autoreload file-watcher. |
 
 **TLS precondition.** For any non-loopback `host`, `tls_mode` must be `required`
 (uvicorn-native TLS) or `terminated` (TLS ended at a trusted reverse proxy upstream),
 otherwise boot is refused rather than serving plaintext on a public interface. With
-`tls_mode=required`, the `python -m app.main` path hands `LDP_SSL_KEYFILE` /
+`tls_mode=required`, the `python -m ldp_personal_store.main` path hands `LDP_SSL_KEYFILE` /
 `LDP_SSL_CERTFILE` to uvicorn and refuses to start when either is missing:
 
 ```sh
 LDP_HOST=0.0.0.0 LDP_TLS_MODE=required \
   LDP_SSL_KEYFILE=key.pem LDP_SSL_CERTFILE=cert.pem \
-  uv run python -m app.main
+  uv run python -m ldp_personal_store.main
 ```
 
 A direct uvicorn launch may pass `--ssl-keyfile`/`--ssl-certfile` instead; in that
@@ -101,9 +101,9 @@ case the launch flags, not the pod, are what guarantee TLS actually terminates.
 
 Both components — storage (LDP + SPARQL) and the view/discovery/stats engine — run in
 one process today behind the shared HTTP surface. The engine, discovery, and stats
-routers depend exclusively on the `StorageBackend` Protocol (`app/storage/backend.py`)
+routers depend exclusively on the `StorageBackend` Protocol (`ldp_personal_store/storage/backend.py`)
 via `BackendDep` / `app.state.backend`; none of them import the concrete
-`FilesystemBackend`, which only `app/main.py` constructs.
+`FilesystemBackend`, which only `ldp_personal_store/main.py` constructs.
 
 A future two-process split therefore needs no change to the engine, discovery, view,
 auth, or policy code: supply a new `StorageBackend` implementation (for example an HTTP
