@@ -81,6 +81,29 @@ def get_settings() -> Settings:
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
+class CorsSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="LDP_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    cors_allow_origins: str = "*"
+
+    @property
+    def allow_origins(self) -> list[str]:
+        raw = self.cors_allow_origins.strip()
+        if raw == "*":
+            return ["*"]
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+@lru_cache
+def get_cors_settings() -> CorsSettings:
+    return CorsSettings()
+
+
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost"})
 
 

@@ -4,6 +4,7 @@ from typing import Literal
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -14,7 +15,7 @@ from ldp_personal_store import __version__
 from ldp_personal_store.apidocs import SECURITY_SCHEMES
 from ldp_personal_store.auth.router import router as system_router
 from ldp_personal_store.auth.tokens import bootstrap_admin_token, bootstrap_engine_token
-from ldp_personal_store.config import check_tls_precondition, get_settings
+from ldp_personal_store.config import check_tls_precondition, get_cors_settings, get_settings
 from ldp_personal_store.discovery.router import router as discovery_router
 from ldp_personal_store.ldp.router import router as ldp_router
 from ldp_personal_store.sparql.router import router as sparql_router
@@ -209,6 +210,32 @@ app = FastAPI(
     description=_API_DESCRIPTION,
     openapi_tags=_TAGS_METADATA,
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_cors_settings().allow_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "If-Match",
+        "If-None-Match",
+        "Prefer",
+        "Slug",
+    ],
+    expose_headers=[
+        "ETag",
+        "Location",
+        "Link",
+        "Allow",
+        "Accept-Post",
+        "Preference-Applied",
+        "WWW-Authenticate",
+    ],
+    max_age=600,
 )
 
 

@@ -27,14 +27,15 @@ never has to be activated manually.
 The recommended command starts a working pod with **zero configuration** required:
 
 ```sh
-uv run python -m ldp_personal_store.main
+LDP_ADMIN_TOKEN=<owner-chosen-secret> uv run python -m ldp_personal_store.main
 ```
 
-With no environment variables set it boots on `http://127.0.0.1:8000/` using every
-default, and the views capability (admin-gated `POST /.system/views`) is live
-immediately — no seeding step. The admin token is generated and logged once at first
-boot (only its SHA-256 hash is persisted), so capture it from the startup log then; it
-cannot be recovered later.
+`LDP_ADMIN_TOKEN` is the one required setting — the pod refuses to start without it, and
+never writes the plaintext to the log (only its SHA-256 hash is persisted). With it set,
+the pod boots on `http://127.0.0.1:8000/` using every other default, and the views
+capability (admin-gated `POST /.system/views`) is live immediately — no seeding step.
+Rotating the credential is a restart with a new `LDP_ADMIN_TOKEN`; the admin record is
+reconciled to it on the next boot.
 
 Prefer this command over `fastapi run` / bare `uvicorn` for anything reachable off
 loopback: it is the only path where uvicorn binds the exact `host`/`port` from the same
@@ -61,14 +62,15 @@ The image binds `0.0.0.0` (a container is never reached over its own loopback) w
 `LDP_TLS_MODE=terminated`, and the compose file publishes the port on the host loopback
 only (`127.0.0.1:8000`), so plaintext never reaches a public interface; a public
 deployment puts a TLS-terminating reverse proxy in front of the container instead. Pod
-state persists in the named volume `pod-data` mounted at `/data`. The admin token is
-logged once on first boot (`docker compose logs pod`) or seeded via `LDP_ADMIN_TOKEN`
-in the compose environment.
+state persists in the named volume `pod-data` mounted at `/data`. `LDP_ADMIN_TOKEN` must
+be provided through the compose environment (host environment or an `.env` file); the
+container refuses to start without it and never writes the plaintext to the log.
 
 ## Configuration
 
-Every setting has a working default and is read from an `LDP_`-prefixed environment
-variable (or a `.env` file). **None are required for a loopback pod.**
+Every setting except the admin token has a working default and is read from an
+`LDP_`-prefixed environment variable (or a `.env` file). **Only `LDP_ADMIN_TOKEN` is
+required — the pod refuses to start without it.**
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
@@ -79,8 +81,9 @@ variable (or a `.env` file). **None are required for a loopback pod.**
 | `LDP_TLS_MODE` | `off` | `off` \| `required` \| `terminated` (see below). |
 | `LDP_SSL_KEYFILE` | unset | TLS private key for `tls_mode=required`; forwarded to uvicorn by `python -m ldp_personal_store.main`. |
 | `LDP_SSL_CERTFILE` | unset | TLS certificate for `tls_mode=required`; forwarded to uvicorn by `python -m ldp_personal_store.main`. |
-| `LDP_ADMIN_TOKEN` | unset | Plaintext admin token to seed deterministically. Left unset, a random token is generated and logged once at boot. |
+| `LDP_ADMIN_TOKEN` | **required** | The pod owner's plaintext admin credential. The pod refuses to start without it; only its SHA-256 hash is persisted and the plaintext is never logged. Choose a long random value (e.g. `openssl rand -base64 32`). |
 | `LDP_RELOAD` | `false` | Dev-only autoreload file-watcher. |
+| `LDP_CORS_ALLOW_ORIGINS` | `*` | Comma-separated browser origins allowed to read the pod cross-origin (CORS), or `*` for any. `*` is a safe default here because auth is a bearer token in the `Authorization` header, never a cookie — see below. |
 
 **TLS precondition.** For any non-loopback `host`, `tls_mode` must be `required`
 (uvicorn-native TLS) or `terminated` (TLS ended at a trusted reverse proxy upstream),
@@ -96,6 +99,18 @@ LDP_HOST=0.0.0.0 LDP_TLS_MODE=required \
 
 A direct uvicorn launch may pass `--ssl-keyfile`/`--ssl-certfile` instead; in that
 case the launch flags, not the pod, are what guarantee TLS actually terminates.
+
+**CORS.** A consumer's app is typically a browser SPA served from a different origin
+than the pod, and every consumer request carries an `Authorization` bearer header — a
+non-safelisted header that forces a CORS preflight. The pod answers that preflight and
+exposes the LDP response headers a browser needs (`ETag`, `Location`, `Link`, `Allow`,
+`Accept-Post`, `Preference-Applied`, `WWW-Authenticate`). Because auth is always an
+explicit bearer token in a header — never a cookie or other ambient credential — the pod
+never sets `Access-Control-Allow-Credentials`, and so `LDP_CORS_ALLOW_ORIGINS=*` is a
+safe default: a hostile page still cannot read a view without the consumer token. Set
+`LDP_CORS_ALLOW_ORIGINS` to a comma-separated origin list to restrict which sites may
+call the pod from a browser (requests from other clients — curl, rdflib — are unaffected,
+as CORS is a browser-enforced policy).
 
 ## Deployment seam / future split
 
