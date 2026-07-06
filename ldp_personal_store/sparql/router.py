@@ -48,7 +48,10 @@ resource, as one union graph).
 (default `text/turtle`).
 * Protocol extension: a request parameter `binding-<name>` binds the SPARQL variable \
 `?<name>` to that value before evaluation — the injection-safe way to parameterize a \
-fixed query instead of splicing values into the query text.
+fixed query instead of splicing values into the query text. An optional companion \
+`bindingtype-<name>` gives that value an XSD datatype IRI, so it binds as a typed \
+term (`"2026-07-06"^^xsd:date`) — required to compare a parameter against typed \
+date literals.
 * Protocol extension: the reserved `.system/` records (views, tokens, policies, the \
 access log) are excluded from evaluation by default, so view CONSTRUCTs never see \
 them; `include-system=true` widens the scope to the full dataset.
@@ -72,6 +75,8 @@ _QUERY_RESPONSES: Responses = {
 
 _BINDING_PREFIX = "binding-"
 
+_BINDINGTYPE_PREFIX = "bindingtype-"
+
 _INCLUDE_SYSTEM_PARAM = "include-system"
 
 _RESULTS_DEFAULT = "application/sparql-results+json"
@@ -86,12 +91,23 @@ _RDF_DEFAULT = "text/turtle"
 
 
 def _extract_bindings(params: Mapping[str, str]) -> dict[str, str] | None:
+    # ``bindingtype-<name>`` fields carry datatypes, not values; they do not start
+    # with ``binding-`` (the next char is ``t``, not ``-``), so this filter skips them.
     bindings = {
         key.removeprefix(_BINDING_PREFIX): value
         for key, value in params.items()
         if key.startswith(_BINDING_PREFIX)
     }
     return bindings or None
+
+
+def _extract_binding_types(params: Mapping[str, str]) -> dict[str, str] | None:
+    types = {
+        key.removeprefix(_BINDINGTYPE_PREFIX): value
+        for key, value in params.items()
+        if key.startswith(_BINDINGTYPE_PREFIX)
+    }
+    return types or None
 
 
 def _extract_include_system(params: Mapping[str, str]) -> bool:
@@ -111,6 +127,7 @@ def _run_query(
     accept: str | None,
     init_bindings: dict[str, str] | None = None,
     include_system: bool = False,
+    init_binding_types: dict[str, str] | None = None,
 ) -> Response:
     if not sparql or not sparql.strip():
         raise HTTPException(status_code=400, detail="Missing query")
@@ -118,7 +135,12 @@ def _run_query(
     # query() while a SPARQLError may not surface until serialization iterates the
     # result — both are faults in the client's query, hence the shared 400 guard.
     try:
-        result = backend.query(sparql, init_bindings=init_bindings, include_system=include_system)
+        result = backend.query(
+            sparql,
+            init_bindings=init_bindings,
+            include_system=include_system,
+            init_binding_types=init_binding_types,
+        )
         if result.type in ("SELECT", "ASK"):
             media_type, fmt = negotiate_media(accept, _RESULTS_FORMATS, _RESULTS_DEFAULT)
             if result.type == "ASK" and fmt == "csv":
@@ -162,6 +184,7 @@ def query_get(
         accept,
         init_bindings=_extract_bindings(request.query_params),
         include_system=_extract_include_system(request.query_params),
+        init_binding_types=_extract_binding_types(request.query_params),
     )
 
 
@@ -216,6 +239,7 @@ def query_post(
     if normalized_ct == "application/sparql-query":
         sparql = _decode_utf8(body)
         bindings = _extract_bindings(request.query_params)
+        binding_types = _extract_binding_types(request.query_params)
         include_system = _extract_include_system(request.query_params)
     elif normalized_ct == "application/x-www-form-urlencoded":
         fields = {
@@ -223,11 +247,19 @@ def query_post(
         }
         sparql = fields.get("query", "")
         bindings = _extract_bindings(fields) or _extract_bindings(request.query_params)
+        binding_types = _extract_binding_types(fields) or _extract_binding_types(
+            request.query_params
+        )
         include_system = _extract_include_system(fields) or _extract_include_system(
             request.query_params
         )
     else:
         raise HTTPException(status_code=415)
     return _run_query(
-        backend, sparql, accept, init_bindings=bindings, include_system=include_system
+        backend,
+        sparql,
+        accept,
+        init_bindings=bindings,
+        include_system=include_system,
+        init_binding_types=binding_types,
     )

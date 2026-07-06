@@ -47,11 +47,12 @@ class Settings(BaseSettings):
     ssl_keyfile: Path | None = None
     ssl_certfile: Path | None = None
 
-    # Optional PLAINTEXT admin token used to deterministically seed the bootstrap
-    # hash for automated deployments and tests. It is never persisted in plaintext —
-    # only its SHA-256 hash is stored. Left unset, the bootstrap generates a random
-    # admin token and logs it once instead.
-    admin_token: str | None = None
+    # The pod owner's admin credential (PLAINTEXT). Required and has no default: the
+    # server refuses to start when it is unset, so a pod never comes up with an absent
+    # or default admin token. Only its SHA-256 hash is persisted — the plaintext is
+    # never written to disk or the log. The owner chooses the value, e.g. the output
+    # of `openssl rand -base64 32`.
+    admin_token: str
 
     # Optional PLAINTEXT engine token: the credential the view engine presents on the
     # engine->storage boundary. Only its SHA-256 hash is persisted. Left unset, the

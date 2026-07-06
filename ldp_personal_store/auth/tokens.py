@@ -49,12 +49,6 @@ SELECT ?tokenUri ?stored ?tokenType WHERE {
 }
 """
 
-_ADMIN_EXISTS_QUERY = """
-PREFIX pod: <urn:pod:vocab:>
-ASK { ?t a pod:AdminToken }
-"""
-
-
 @dataclass(frozen=True)
 class TokenRecord:
     token_uri: str
@@ -237,37 +231,23 @@ def revoke_token(backend: StorageBackend, record_uri: str) -> None:
 def bootstrap_admin_token(
     backend: StorageBackend,
     system_ns: Namespace,
-    admin_token: str | None = None,
-) -> str | None:
-    """Seed the admin token record when none exists; return the plaintext only if generated.
+    admin_token: str,
+) -> None:
+    """Reconcile the admin token record to the operator-supplied value on every boot.
 
-    Idempotent: with an admin record already present it does nothing. When *admin_token*
-    is supplied its hash is seeded and None is returned (the caller already knows the
-    value); otherwise a random token is generated and returned so the caller can log it
-    once. The plaintext is never persisted — only its hash.
+    The admin credential is required and supplied out of band (``LDP_ADMIN_TOKEN``);
+    this writes the record at the fixed ``admin`` id holding only the SHA-256 hash of
+    that value. The plaintext is never persisted or logged. Rewriting on every boot
+    makes rotation a matter of restarting with a new ``LDP_ADMIN_TOKEN``.
     """
-    if backend.query(_ADMIN_EXISTS_QUERY, include_system=True).askAnswer:
-        return None
-    if admin_token is not None:
-        _write_record(
-            backend,
-            system_ns,
-            "admin",
-            hashlib.sha256(admin_token.encode()).hexdigest(),
-            POD_AdminToken,
-            (),
-        )
-        return None
-    plaintext = secrets.token_urlsafe(32)
     _write_record(
         backend,
         system_ns,
         "admin",
-        hashlib.sha256(plaintext.encode()).hexdigest(),
+        hashlib.sha256(admin_token.encode()).hexdigest(),
         POD_AdminToken,
         (),
     )
-    return plaintext
 
 
 def bootstrap_engine_token(

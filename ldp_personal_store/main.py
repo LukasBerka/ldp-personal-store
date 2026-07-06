@@ -1,4 +1,3 @@
-import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -33,8 +32,6 @@ from ldp_personal_store.vocab import (
     make_system_ns,
 )
 
-logger = logging.getLogger(__name__)
-
 
 def _init_root_container(backend: StorageBackend, base_uri: str) -> None:
     """Seed the pod root as an empty Basic Container on first startup.
@@ -62,11 +59,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     backend = FilesystemBackend(storage_root=settings.storage_root, base_uri=settings.base_uri)
     app.state.backend = backend
     _init_root_container(backend, settings.base_uri)
-    plaintext = bootstrap_admin_token(
-        backend, app.state.system_ns, admin_token=settings.admin_token
-    )
-    if plaintext is not None:
-        logger.warning("Admin token (capture now, not stored): %s", plaintext)
+    bootstrap_admin_token(backend, app.state.system_ns, admin_token=settings.admin_token)
 
     # The engine's storage credential and HTTP client: the bundled deployment talks
     # to this same app over an in-process ASGI transport — the identical HTTP

@@ -89,12 +89,17 @@ class StorageClient:
         bindings: dict[str, str] | None,
         accept: str,
         include_system: bool,
+        binding_types: dict[str, str] | None = None,
     ):
         # Parameter values travel as binding-<name> protocol extension fields and are
-        # bound server-side via initBindings — never spliced into the query text.
+        # bound server-side via initBindings — never spliced into the query text. A
+        # companion bindingtype-<name> field carries the XSD datatype for typed
+        # (date/dateTime) parameters so they bind as typed terms, not plain literals.
         data = {"query": sparql}
         if bindings:
             data.update({f"binding-{name}": value for name, value in bindings.items()})
+        if binding_types:
+            data.update({f"bindingtype-{name}": dt for name, dt in binding_types.items()})
         # Queries evaluate over the pod's public data by default; the .system/
         # records stay out of scope unless the caller opts in explicitly.
         if include_system:
@@ -112,8 +117,11 @@ class StorageClient:
         sparql: str,
         bindings: dict[str, str] | None = None,
         include_system: bool = False,
+        binding_types: dict[str, str] | None = None,
     ) -> Graph:
-        response = await self._query(sparql, bindings, "text/turtle", include_system)
+        response = await self._query(
+            sparql, bindings, "text/turtle", include_system, binding_types
+        )
         graph = Graph()
         graph.parse(data=response.text, format="turtle")
         return graph
@@ -123,9 +131,10 @@ class StorageClient:
         sparql: str,
         bindings: dict[str, str] | None = None,
         include_system: bool = False,
+        binding_types: dict[str, str] | None = None,
     ) -> list[dict[str, str]]:
         response = await self._query(
-            sparql, bindings, "application/sparql-results+json", include_system
+            sparql, bindings, "application/sparql-results+json", include_system, binding_types
         )
         rows = response.json()["results"]["bindings"]
         return [{name: cell["value"] for name, cell in row.items()} for row in rows]

@@ -43,7 +43,12 @@ from ldp_personal_store.upstream import (
     StorageDep,
     UpstreamNotFound,
 )
-from ldp_personal_store.views.model import ViewRecord, bind_params, parse_view_record
+from ldp_personal_store.views.model import (
+    ViewRecord,
+    bind_params,
+    binding_datatypes,
+    parse_view_record,
+)
 from ldp_personal_store.views.rewrite import rewrite_upstream_uris
 from ldp_personal_store.vocab import POD_viewRetrievalCount
 
@@ -143,7 +148,9 @@ async def get_view(
     # Policy decision on the fully-validated request, before any data is produced.
     check_policy(token, await _load_policy(storage, token.policy_ref), graph, view_uri)
 
-    result = await storage.construct(view.construct_template, bindings=bound)
+    result = await storage.construct(
+        view.construct_template, bindings=bound, binding_types=binding_datatypes(view.params)
+    )
 
     # Replace raw storage URIs of shared resources with gated engine proxy URLs so
     # the consumer follows every reference through the engine, never storage directly.
@@ -257,7 +264,9 @@ async def get_blob(
     # Policy decision on the fully-validated request, before any data is produced.
     check_policy(token, await _load_policy(storage, token.policy_ref), graph, view_uri)
 
-    result = await storage.construct(view.construct_template, bindings=bound)
+    result = await storage.construct(
+        view.construct_template, bindings=bound, binding_types=binding_datatypes(view.params)
+    )
 
     # A stale proxy URL — the resource is no longer produced by the view — is
     # unreachable. Membership means appearing anywhere the rewrite step looks:

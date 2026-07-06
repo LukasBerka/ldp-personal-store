@@ -73,6 +73,7 @@ class StorageBackend(Protocol):
         sparql: str,
         init_bindings: dict[str, str] | None = None,
         include_system: bool = False,
+        init_binding_types: dict[str, str] | None = None,
     ) -> Result:
         """Execute *sparql* against the union of all resource graphs.
 
@@ -81,6 +82,10 @@ class StorageBackend(Protocol):
         view can never read server-managed records. Internal callers that operate
         on those records pass ``include_system=True``; only that full-dataset scope
         exposes the named-graph axis, so ``GRAPH`` clauses require it.
+
+        ``init_binding_types`` optionally maps a binding name to an XSD datatype IRI
+        so that value binds as a typed RDF term (``"2026-07-06"^^xsd:date``) instead
+        of a plain literal; names absent from the map keep the default term coercion.
 
         Returns the raw rdflib Result (SELECT rows, CONSTRUCT graph, or ASK boolean);
         serialization is the caller's responsibility.

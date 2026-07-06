@@ -28,11 +28,11 @@ SECURITY_SCHEMES = {
         "type": "http",
         "scheme": "bearer",
         "description": (
-            "The pod owner's administrative bearer token. Printed exactly once to the "
-            "server log on first startup (or supplied via `LDP_ADMIN_TOKEN`); it is never "
-            "retrievable afterwards. Authorizes the full surface: every data read and "
-            "write, the `.system/` management tree, the SPARQL endpoint, and "
-            "`/.engine/stats`."
+            "The pod owner's administrative bearer token, supplied at startup via the "
+            "required `LDP_ADMIN_TOKEN` environment variable; only its SHA-256 hash is "
+            "stored and the plaintext is never written to the server log. Authorizes the "
+            "full surface: every data read and write, the `.system/` management tree, the "
+            "SPARQL endpoint, and `/.engine/stats`."
         ),
     },
     "EngineToken": {

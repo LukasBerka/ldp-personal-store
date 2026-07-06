@@ -75,7 +75,7 @@ POD_constructTemplate: URIRef = POD.constructTemplate  # xsd:string SPARQL CONST
 POD_contentTypeHint: URIRef = POD.contentTypeHint  # xsd:string suggested response media type
 POD_parameter: URIRef = POD.parameter  # view -> parameter blank node
 POD_paramName: URIRef = POD.paramName  # xsd:string SPARQL variable name (no leading '?')
-POD_paramType: URIRef = POD.paramType  # xsd:string: 'str' | 'int' | 'iri'
+POD_paramType: URIRef = POD.paramType  # xsd:string: 'str' | 'int' | 'iri' | 'date' | 'dateTime'
 
 # Access-policy terms
 POD_Policy: URIRef = POD.Policy  # rdf:type marker on a policy resource

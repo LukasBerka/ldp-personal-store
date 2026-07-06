@@ -4,6 +4,13 @@ CONSTRUCT-template validation, and injection-safe parameter binding.
 This module imports only rdflib and Pydantic — never FastAPI or any HTTP layer —
 so the view engine can depend on it without pulling in the router.
 
+Typed-binding contract: ``"date"`` and ``"dateTime"`` parameters are bound as
+typed RDF terms (``"2026-07-06"^^xsd:date``) so a template can compare them
+directly against the pod's typed date literals — ``binding_datatypes`` carries the
+XSD datatype to the storage backend alongside the value. This is required because
+rdflib cannot cast a plain literal to a date in-query (``xsd:date(?p)`` yields
+unbound), so the datatype must be applied at bind time.
+
 Integer-binding caveat: a declared ``"int"`` parameter is still bound as a plain
 string term (``_to_term`` in the storage backend turns a scheme-less value into a
 plain ``Literal`` with no ``xsd:integer`` datatype). A template that compares
@@ -37,7 +44,11 @@ from ldp_personal_store.vocab import (
     POD_viewRetrievalCount,
 )
 
-ParamTypeName = Literal["str", "int", "iri"]
+ParamTypeName = Literal["str", "int", "iri", "date", "dateTime"]
+
+# Declared parameter types that bind as a typed RDF literal rather than a plain one,
+# mapped to the XSD datatype the value carries into the query.
+_PARAM_DATATYPE: dict[str, URIRef] = {"date": XSD.date, "dateTime": XSD.dateTime}
 
 
 class ParamDecl(BaseModel):
@@ -240,5 +251,30 @@ def bind_params(decls: list[ParamDecl], raw: dict[str, str]) -> dict[str, str]:
                 raise ValueError(f"Parameter {decl.name!r} must be an integer") from exc
         elif decl.type == "iri" and not _ABS_IRI.match(value):
             raise ValueError(f"Parameter {decl.name!r} must be an absolute IRI, got {value!r}")
+        elif decl.type in _PARAM_DATATYPE and RDFLiteral(
+            value, datatype=_PARAM_DATATYPE[decl.type]
+        ).ill_typed:
+            # Validate with the same rdflib parser that binds the value at query time,
+            # so a form accepted here can never turn ill-typed (and silently match
+            # nothing) later. The datatype is applied by binding_datatypes/_to_term.
+            raise ValueError(
+                f"Parameter {decl.name!r} must be a valid {decl.type} value, got {value!r}"
+            )
         bound[decl.name] = value
     return bound
+
+
+def binding_datatypes(decls: list[ParamDecl]) -> dict[str, str]:
+    """Map each declared date/dateTime parameter to its XSD datatype IRI.
+
+    The engine passes this alongside the bound values so the storage backend binds
+    a typed RDF term (``"2026-07-06"^^xsd:date``) rather than a plain literal —
+    a date parameter must carry its datatype to compare against the pod's typed
+    date literals, and rdflib cannot recover the datatype in-query. Only date and
+    dateTime params appear; str/int/iri carry no datatype over the wire.
+    """
+    return {
+        decl.name: str(_PARAM_DATATYPE[decl.type])
+        for decl in decls
+        if decl.type in _PARAM_DATATYPE
+    }

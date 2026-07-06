@@ -34,9 +34,14 @@ from ldp_personal_store.vocab import (
 _IRI_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 
-def _to_term(value: str) -> URIRef | Literal:
+def _to_term(value: str, datatype: str | None = None) -> URIRef | Literal:
     # init_bindings values arrive as plain strings; rdflib will not coerce them,
     # so absolute-IRI-looking values become URIRefs and everything else a Literal.
+    # An explicit datatype (carried by the bindingtype-<name> protocol field) binds
+    # a typed literal instead — the only way to compare a parameter against typed
+    # date literals, since rdflib cannot cast a plain literal to a date in-query.
+    if datatype is not None:
+        return Literal(value, datatype=URIRef(datatype))
     if _IRI_SCHEME.match(value):
         return URIRef(value)
     return Literal(value)
@@ -233,10 +238,14 @@ class FilesystemBackend:
         sparql: str,
         init_bindings: dict[str, str] | None = None,
         include_system: bool = False,
+        init_binding_types: dict[str, str] | None = None,
     ) -> Result:
         bindings = None
         if init_bindings is not None:
-            bindings = {var: _to_term(value) for var, value in init_bindings.items()}
+            types = init_binding_types or {}
+            bindings = {
+                var: _to_term(value, types.get(var)) for var, value in init_bindings.items()
+            }
         # The Dataset was built with default_union, so a plain `?s ?p ?o` pattern
         # sees every resource without a GRAPH wrapper.
         with self._lock:

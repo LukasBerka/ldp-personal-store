@@ -7,7 +7,10 @@ fetches that resource (and already holds the view record) over the storage
 boundary and hands both graphs to :func:`check_policy`, which is a pure decision:
 each constraint present is checked independently, a request that violates any
 constraint is denied with HTTPException(403), and an absent policy graph, or an
-absent individual constraint, is a clean pass-through.
+absent individual constraint, is a clean pass-through. The per-view retrieval
+ceiling is the exception: it lives on the view record rather than the grant's
+policy, so it is enforced on every request regardless of whether the grant
+carries a policy graph — an unconstrained grant cannot bypass a view-level cap.
 """
 
 from datetime import UTC, datetime
@@ -56,50 +59,57 @@ def check_policy(
     Returns normally when the request may proceed, and raises HTTPException(403)
     naming the violated constraint otherwise. *policy_graph* is None when the
     token carries no policy reference or the policy resource was never written —
-    such a grant carries no constraint and passes through. *view_graph* and
-    *view_uri* identify the requested view (a grant may unlock several), whose
-    record carries the per-view ceiling and its counter.
+    such a grant carries no per-grant constraint, but the per-view ceiling below
+    still applies. *view_graph* and *view_uri* identify the requested view (a
+    grant may unlock several), whose record carries the per-view ceiling and its
+    counter.
     """
-    if policy_graph is None:
-        return
+    # Per-grant constraints come from the grant's own policy graph; an absent graph
+    # (an unconstrained grant) carries none of them. The per-view ceiling further
+    # down is deliberately outside this guard — it belongs to the view, not the
+    # grant, so it must be enforced even when the grant carries no policy.
+    if policy_graph is not None:
+        now = datetime.now(UTC)
+        subject = URIRef(record.policy_ref or "")
 
-    now = datetime.now(UTC)
-    subject = URIRef(record.policy_ref or "")
+        # Boundary rule for the time checks: an instant exactly on a bound is allowed;
+        # only a strictly-past (or, for validFrom, strictly-early) instant denies. The
+        # validity window is inclusive of both validFrom and validUntil.
+        expires_at = policy_graph.value(subject, POD_expiresAt)
+        if expires_at is not None and now > parse_xsd_datetime(str(expires_at)):
+            raise HTTPException(status_code=403, detail="policy: expired")
 
-    # Boundary rule for the time checks: an instant exactly on a bound is allowed;
-    # only a strictly-past (or, for validFrom, strictly-early) instant denies. The
-    # validity window is inclusive of both validFrom and validUntil.
-    expires_at = policy_graph.value(subject, POD_expiresAt)
-    if expires_at is not None and now > parse_xsd_datetime(str(expires_at)):
-        raise HTTPException(status_code=403, detail="policy: expired")
+        valid_from = policy_graph.value(subject, POD_validFrom)
+        if valid_from is not None and now < parse_xsd_datetime(str(valid_from)):
+            raise HTTPException(status_code=403, detail="policy: not yet valid")
 
-    valid_from = policy_graph.value(subject, POD_validFrom)
-    if valid_from is not None and now < parse_xsd_datetime(str(valid_from)):
-        raise HTTPException(status_code=403, detail="policy: not yet valid")
+        valid_until = policy_graph.value(subject, POD_validUntil)
+        if valid_until is not None and now > parse_xsd_datetime(str(valid_until)):
+            raise HTTPException(status_code=403, detail="policy: window elapsed")
 
-    valid_until = policy_graph.value(subject, POD_validUntil)
-    if valid_until is not None and now > parse_xsd_datetime(str(valid_until)):
-        raise HTTPException(status_code=403, detail="policy: window elapsed")
+        # Per-grant ceiling: the counter is bumped once per delivery, so at count N-1 the
+        # Nth delivery is still allowed and at count N (the limit) the grant is exhausted.
+        max_retrievals = policy_graph.value(subject, POD_maxRetrievals)
+        if max_retrievals is not None and record.enforcement_count >= int(str(max_retrievals)):
+            raise HTTPException(status_code=403, detail="policy: max retrievals reached")
 
-    # Per-grant ceiling: the counter is bumped once per delivery, so at count N-1 the
-    # Nth delivery is still allowed and at count N (the limit) the grant is exhausted.
-    max_retrievals = policy_graph.value(subject, POD_maxRetrievals)
-    if max_retrievals is not None and record.enforcement_count >= int(str(max_retrievals)):
-        raise HTTPException(status_code=403, detail="policy: max retrievals reached")
-
-    min_interval = policy_graph.value(subject, POD_minInterval)
-    if min_interval is not None:
-        # last_used_at is written by the post-delivery counter bump; the epoch sentinel
-        # means "never delivered", so the first delivery is always allowed. An elapsed
-        # gap exactly equal to the interval passes; only a shorter gap denies.
-        last_used = parse_xsd_datetime(record.last_used_at)
-        if last_used != UNIX_EPOCH and (now - last_used).total_seconds() < int(str(min_interval)):
-            raise HTTPException(status_code=403, detail="policy: min interval not elapsed")
+        min_interval = policy_graph.value(subject, POD_minInterval)
+        if min_interval is not None:
+            # last_used_at is written by the post-delivery counter bump; the epoch sentinel
+            # means "never delivered", so the first delivery is always allowed. An elapsed
+            # gap exactly equal to the interval passes; only a shorter gap denies.
+            last_used = parse_xsd_datetime(record.last_used_at)
+            if last_used != UNIX_EPOCH and (now - last_used).total_seconds() < int(
+                str(min_interval)
+            ):
+                raise HTTPException(status_code=403, detail="policy: min interval not elapsed")
 
     # Per-view ceiling: a limit shared across every grant on the same view, held on
-    # the view record the engine already fetched for this request. Same
-    # documented-acceptable TOCTOU window as the per-grant counter — the count read
-    # here can race the post-delivery bump under concurrent requests, which is
+    # the view record the engine already fetched for this request. It lives on the
+    # view rather than the grant's policy, so it is enforced on every request — an
+    # unconstrained grant with no policy graph cannot slip past a view-level cap.
+    # Same documented-acceptable TOCTOU window as the per-grant counter — the count
+    # read here can race the post-delivery bump under concurrent requests, which is
     # tolerated for a single-user pod.
     if view_graph is not None and view_uri is not None:
         view_subject = URIRef(view_uri)
