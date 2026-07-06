@@ -29,10 +29,12 @@ _VIEW_BODY = rdf_request_body(
     "`pod:contentTypeHint` — the result serialization, one of the four RDF media types "
     "(default `text/turtle`); `pod:maxViewRetrievals` — a delivery ceiling shared across "
     "all grants on this view; and one `pod:parameter` blank node per consumer-suppliable "
-    "parameter, carrying `pod:paramName` and `pod:paramType` (`str`, `int`, or `iri`). "
+    "parameter, carrying `pod:paramName` and `pod:paramType` (one of `str`, `int`, `iri`, "
+    "`date`, or `dateTime`). "
     "Every declared parameter must appear as `?name` in the template; values are bound as "
     "RDF terms, never spliced into the query text. An `int` value still binds as a plain "
-    "literal, so templates should coerce explicitly (e.g. `FILTER(xsd:integer(?n) > 5)`).",
+    "literal, so templates should coerce explicitly (e.g. `FILTER(xsd:integer(?n) > 5)`); "
+    "`date` and `dateTime` bind as typed literals and compare directly.",
     "@prefix pod: <urn:pod:vocab:> .\n"
     "@prefix dcterms: <http://purl.org/dc/terms/> .\n\n"
     "[] a pod:View ;\n"

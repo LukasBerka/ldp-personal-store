@@ -65,7 +65,8 @@ async def _describe_member(
         "request, whose members are the views the presented token links. Each member "
         "carries `dcterms:title`, `dcterms:description`, and one `pod:parameter` node "
         "per query-string parameter (`pod:paramName`, `pod:paramType` of `str`, `int`, "
-        "or `iri`) the view expects at `/.engine/views/{view_id}`. A grant with no views "
+        "`iri`, `date`, or `dateTime`) the view expects at `/.engine/views/{view_id}`. A "
+        "grant with no views "
         "yields a valid empty container."
     ),
     response_class=Response,
