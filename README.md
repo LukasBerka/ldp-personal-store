@@ -112,22 +112,6 @@ safe default: a hostile page still cannot read a view without the consumer token
 call the pod from a browser (requests from other clients — curl, rdflib — are unaffected,
 as CORS is a browser-enforced policy).
 
-## Deployment seam / future split
-
-Both components — storage (LDP + SPARQL) and the view/discovery/stats engine — run in
-one process today behind the shared HTTP surface. The engine, discovery, and stats
-routers depend exclusively on the `StorageBackend` Protocol (`ldp_personal_store/storage/backend.py`)
-via `BackendDep` / `app.state.backend`; none of them import the concrete
-`FilesystemBackend`, which only `ldp_personal_store/main.py` constructs.
-
-A future two-process split therefore needs no change to the engine, discovery, view,
-auth, or policy code: supply a new `StorageBackend` implementation (for example an HTTP
-client backend talking to a storage process) and swap it in at the single construction
-site in the lifespan. The one nontrivial detail for that backend is that
-`StorageBackend.query` takes a raw SPARQL string and returns a raw rdflib `Result`, so
-an HTTP-backed implementation must serialize the init-bindings and the results across
-the wire.
-
 ## Lint and format (ruff)
 
 ```sh

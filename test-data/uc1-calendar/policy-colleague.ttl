@@ -1,0 +1,6 @@
+# UC1 colleague grant (mirrors the ch7 example): expires Aug 1, at most 100
+# retrievals, and at least 5 seconds between consecutive retrievals.
+<> a <urn:pod:vocab:Policy> ;
+  <urn:pod:vocab:expiresAt>     "2026-08-01T00:00:00Z" ;
+  <urn:pod:vocab:maxRetrievals> 100 ;
+  <urn:pod:vocab:minInterval>   5 .

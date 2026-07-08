@@ -1,0 +1,8 @@
+@prefix ns1: <urn:pod:vocab:> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://localhost:8000/.system/access-log/_Oe7hfcOuVA> a ns1:AccessLogEntry ;
+    ns1:accessLogTimestamp "2026-07-05T19:17:54+00:00"^^xsd:dateTime ;
+    ns1:accessLogToken <http://localhost:8000/.system/tokens/uw-wxrBClKc> ;
+    ns1:accessLogView <http://localhost:8000/.system/views/schedule> .
+

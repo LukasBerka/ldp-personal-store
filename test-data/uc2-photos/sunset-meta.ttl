@@ -1,0 +1,10 @@
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix pho: <http://example.org/photo#> .
+
+<http://localhost:8000/photos/summer-2026/sunset.png>
+    dct:title "Sunset over the old town" ;
+    pho:takenOn "2026-06-29" ;
+    pho:camera "Pixel 9" ;
+    pho:album <http://localhost:8000/photos/summer-2026/> ;
+    pho:gpsLat "42.6414" ;
+    pho:gpsLong "18.1077" .

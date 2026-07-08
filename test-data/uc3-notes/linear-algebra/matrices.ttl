@@ -1,0 +1,10 @@
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix note: <http://example.org/note#> .
+
+<http://localhost:8000/notes/linear-algebra/matrices>
+    a note:Note ;
+    dct:title "Matrices and linear maps" ;
+    note:topic "linear-maps" ;
+    note:course <http://localhost:8000/notes/linear-algebra/> ;
+    dct:created "2026-03-03" ;
+    note:text "Every linear map between finite-dimensional spaces is represented by a matrix once bases are fixed. Composition of maps corresponds to matrix multiplication; change of basis is conjugation by an invertible matrix." .

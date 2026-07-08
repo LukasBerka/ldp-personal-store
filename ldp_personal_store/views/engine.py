@@ -70,8 +70,10 @@ async def _record_delivery(
     description=(
         "Run the view's CONSTRUCT and return the result in the view's declared content "
         "type. The bearer token must link this view (discover ids and parameter shapes "
-        "at `/.engine/discovery`). Supply every declared parameter as a query-string "
-        "field, `?name=value`. Pod-local resource references in the result — including "
+        "at `/.engine/discovery`). Declared parameters are optional: supply any as a "
+        "query-string field, `?name=value`, to narrow the result; omit them to receive "
+        "the view's full, un-narrowed output. Pod-local resource references in the "
+        "result — including "
         "binaries — are rewritten to `/.engine/blob/{view_id}?…` proxy URLs; dereference "
         "them as-is with the same token. Each successful delivery counts against the "
         "grant's policy ceilings; a denial is a `403` whose `detail` names the violated "
@@ -88,7 +90,7 @@ async def _record_delivery(
             )
         },
         404: {"description": "No view definition at this id."},
-        422: {"description": "A declared parameter is missing or fails its type check."},
+        422: {"description": "A supplied parameter fails its declared type check."},
         502: {"description": "The engine could not reach storage (its credential may be revoked)."},
     },
     openapi_extra={"security": CONSUMER_AUTH},
@@ -172,7 +174,7 @@ async def get_view(
                 "result, or the upstream resource is gone."
             )
         },
-        422: {"description": "A declared parameter is missing or fails its type check."},
+        422: {"description": "A supplied parameter fails its declared type check."},
         502: {"description": "The engine could not reach storage (its credential may be revoked)."},
     },
     openapi_extra={
@@ -185,8 +187,9 @@ async def get_view(
                 "schema": {"type": "string"},
                 "description": (
                     "The pod-local URI of the shared resource, percent-encoded — present "
-                    "in rewritten proxy URLs already. The view's declared parameters must "
-                    "accompany it with the same values used on the primary fetch."
+                    "in rewritten proxy URLs already. Any view parameters used on the "
+                    "primary fetch must accompany it with the same values, so the proxy "
+                    "re-runs the identical (equally narrowed) CONSTRUCT."
                 ),
             }
         ],

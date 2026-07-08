@@ -1,0 +1,11 @@
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix cal: <http://example.org/cal#> .
+
+<http://localhost:8000/calendar/personal/vacation-flight>
+    a cal:Event ;
+    dct:title "Flight to Dubrovnik" ;
+    cal:date "2026-07-18" ;
+    cal:start "2026-07-18T06:20:00Z" ;
+    cal:location "PRG Terminal 2" ;
+    cal:calendar <http://localhost:8000/calendar/personal/> ;
+    cal:privateNote "Booking ref KX7Q2P; passport in the top drawer." .

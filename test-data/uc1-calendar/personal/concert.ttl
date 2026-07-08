@@ -1,0 +1,13 @@
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix cal: <http://example.org/cal#> .
+
+# Outside the two-week window (2026-07-05 .. 2026-07-19): the windowed schedule
+# view must NOT return this event.
+<http://localhost:8000/calendar/personal/concert>
+    a cal:Event ;
+    dct:title "Concert: Prague Philharmonic" ;
+    cal:date "2026-09-12" ;
+    cal:start "2026-09-12T19:30:00Z" ;
+    cal:location "Rudolfinum" ;
+    cal:calendar <http://localhost:8000/calendar/personal/> ;
+    cal:privateNote "Seats 12-13, row F; tickets in email." .

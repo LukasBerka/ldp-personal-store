@@ -1,0 +1,12 @@
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix pho: <http://example.org/photo#> .
+
+# Descriptive metadata about the binary /photos/summer-2026/beach.png.
+# GPS coordinates are private and must not appear in the shared album view.
+<http://localhost:8000/photos/summer-2026/beach.png>
+    dct:title "Morning at the beach" ;
+    pho:takenOn "2026-06-28" ;
+    pho:camera "Pixel 9" ;
+    pho:album <http://localhost:8000/photos/summer-2026/> ;
+    pho:gpsLat "42.6507" ;
+    pho:gpsLong "18.0944" .

@@ -1,0 +1,11 @@
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix cal: <http://example.org/cal#> .
+
+<http://localhost:8000/calendar/personal/dentist>
+    a cal:Event ;
+    dct:title "Dentist appointment" ;
+    cal:date "2026-07-08" ;
+    cal:start "2026-07-08T07:45:00Z" ;
+    cal:location "Dental clinic, Vinohradska 12" ;
+    cal:calendar <http://localhost:8000/calendar/personal/> ;
+    cal:privateNote "Root canal follow-up; take ibuprofen before." .

@@ -1,0 +1,17 @@
+@prefix pod:     <urn:pod:vocab:> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# UC4: household list consulted throughout the week by both partners under one
+# shared long-lived token (no parameters, no policy — per the ch4 discussion).
+<> a pod:View ;
+   dcterms:title "Shopping list" ;
+   dcterms:description "Current household shopping list: item names, quantities, categories and done flags." ;
+   pod:constructTemplate """
+     PREFIX shop: <http://example.org/shop#>
+     CONSTRUCT { ?i shop:name ?n ; shop:quantity ?q ;
+                    shop:category ?c ; shop:done ?done }
+     WHERE     { ?i a shop:Item ;
+                    shop:name ?n ; shop:quantity ?q ;
+                    shop:category ?c ; shop:done ?done }
+   """ ;
+   pod:contentTypeHint "text/turtle" .

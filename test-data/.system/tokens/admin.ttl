@@ -1,0 +1,10 @@
+@prefix ns1: <urn:pod:vocab:> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://localhost:8000/.system/tokens/admin> a ns1:AdminToken,
+        ns1:Token ;
+    ns1:enforcementCount 0 ;
+    ns1:lastUsedAt "1970-01-01T00:00:00+00:00"^^xsd:dateTime ;
+    ns1:policyRef <http://localhost:8000/.system/tokens/policies/admin> ;
+    ns1:tokenHash "17d6bfe05d1b1fb7bc499f8e3f639c7b3eda4c40f321eef8887a0c04c89a99c5"^^xsd:string .
+

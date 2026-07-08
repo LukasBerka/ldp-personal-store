@@ -1,0 +1,11 @@
+@prefix ns1: <urn:pod:vocab:> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://localhost:8000/.system/tokens/uw-wxrBClKc> a ns1:ConsumerToken,
+        ns1:Token ;
+    ns1:enforcementCount 2 ;
+    ns1:lastUsedAt "2026-07-05T19:17:54+00:00"^^xsd:dateTime ;
+    ns1:linkedView <http://localhost:8000/.system/views/schedule> ;
+    ns1:policyRef <http://localhost:8000/.system/tokens/policies/uw-wxrBClKc> ;
+    ns1:tokenHash "e28850575192354d3ae26c06e666b9636cce850f1d11c194cd13aed07d477d70"^^xsd:string .
+

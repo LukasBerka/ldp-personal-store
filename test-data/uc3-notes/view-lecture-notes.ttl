@@ -1,0 +1,20 @@
+@prefix pod:     <urn:pod:vocab:> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# UC3: share one folder of the note hierarchy with a classmate. The lecture
+# parameter scopes the share to a single course container.
+<> a pod:View ;
+   dcterms:title "Lecture notes" ;
+   dcterms:description "All lecture notes of one course: title, topic, date and full text." ;
+   pod:constructTemplate """
+     PREFIX dct:  <http://purl.org/dc/terms/>
+     PREFIX note: <http://example.org/note#>
+     CONSTRUCT { ?n dct:title ?t ; note:topic ?topic ;
+                    dct:created ?c ; note:text ?text }
+     WHERE     { ?n dct:title ?t ; note:topic ?topic ;
+                    dct:created ?c ; note:text ?text ;
+                    note:course ?lecture }
+   """ ;
+   pod:contentTypeHint "text/turtle" ;
+   pod:parameter [ pod:paramName "lecture" ;
+                   pod:paramType "iri" ] .

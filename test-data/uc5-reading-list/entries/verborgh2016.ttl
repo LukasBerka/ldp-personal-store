@@ -1,0 +1,13 @@
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix bib: <http://example.org/bib#> .
+
+<http://localhost:8000/reading-list/verborgh2016>
+    a bib:Entry ;
+    dct:title "Triple Pattern Fragments: A Low-Cost Knowledge Graph Interface for the Web" ;
+    dct:creator "Verborgh, R. et al." ;
+    dct:issued "2016" ;
+    bib:venue "Journal of Web Semantics 37-38" ;
+    bib:doi "10.1016/j.websem.2016.03.003" ;
+    bib:status "to-read" ;
+    bib:curatedFor "pods-review-2026" ;
+    bib:privateNote "Assigned to me for the second review session." .

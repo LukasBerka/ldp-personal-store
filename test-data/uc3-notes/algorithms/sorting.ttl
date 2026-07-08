@@ -1,0 +1,12 @@
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix note: <http://example.org/note#> .
+
+# Belongs to the algorithms course: the lecture-notes view scoped to
+# /notes/linear-algebra/ must NOT return this note.
+<http://localhost:8000/notes/algorithms/sorting>
+    a note:Note ;
+    dct:title "Comparison sorting and lower bounds" ;
+    note:topic "sorting" ;
+    note:course <http://localhost:8000/notes/algorithms/> ;
+    dct:created "2026-03-10" ;
+    note:text "Any comparison sort needs Omega(n log n) comparisons in the worst case (decision-tree argument). Mergesort and heapsort meet the bound; quicksort does in expectation. Counting sort escapes it by not comparing." .

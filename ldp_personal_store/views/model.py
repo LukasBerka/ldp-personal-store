@@ -194,12 +194,18 @@ _INT_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
 
 
 def bind_params(decls: list[ParamDecl], raw: dict[str, str]) -> dict[str, str]:
-    """Validate *raw* query-string values against *decls*; return initBindings-ready dict.
+    """Validate supplied *raw* query-string values against *decls*; return an
+    initBindings-ready dict.
+
+    Parameters are optional: a declared parameter absent from *raw* is left
+    unbound, so its SPARQL variable stays free and the view is not narrowed on
+    that axis (a request with no parameters returns the view's full result).
+    Only supplied values are type-checked and bound.
     """
     bound: dict[str, str] = {}
     for decl in decls:
         if decl.name not in raw:
-            raise ValueError(f"Missing required parameter: {decl.name!r}")
+            continue
         value = raw[decl.name]
         if decl.type == "int":
             try:

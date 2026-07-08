@@ -1,0 +1,18 @@
+@prefix pod:     <urn:pod:vocab:> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# UC1 / ch7 example: derived share exposing only titles and dates of one
+# calendar; private notes and attendee lists never leave the pod.
+<> a pod:View ;
+   dcterms:title "Two-week schedule" ;
+   dcterms:description "Upcoming events, titles and dates only." ;
+   pod:constructTemplate """
+     PREFIX dct: <http://purl.org/dc/terms/>
+     PREFIX cal: <http://example.org/cal#>
+     CONSTRUCT { ?e dct:title ?t ; cal:date ?d }
+     WHERE     { ?e dct:title ?t ; cal:date ?d ;
+                    cal:calendar ?calendar }
+   """ ;
+   pod:contentTypeHint "text/turtle" ;
+   pod:parameter [ pod:paramName "calendar" ;
+                   pod:paramType "iri" ] .

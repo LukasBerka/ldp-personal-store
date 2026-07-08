@@ -1,0 +1,14 @@
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix bib: <http://example.org/bib#> .
+
+# Personal reading, not tagged for the review group: the reading-list view
+# with tag=pods-review-2026 must NOT return this entry.
+<http://localhost:8000/reading-list/martin2008>
+    a bib:Entry ;
+    dct:title "Clean Code: A Handbook of Agile Software Craftsmanship" ;
+    dct:creator "Martin, R. C." ;
+    dct:issued "2008" ;
+    bib:venue "Prentice Hall" ;
+    bib:status "read" ;
+    bib:rating 3 ;
+    bib:privateNote "Re-read chapters 2 and 17 before the code-review session." .

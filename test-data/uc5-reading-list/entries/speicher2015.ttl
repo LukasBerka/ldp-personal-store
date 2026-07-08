@@ -1,0 +1,13 @@
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix bib: <http://example.org/bib#> .
+
+<http://localhost:8000/reading-list/speicher2015>
+    a bib:Entry ;
+    dct:title "Linked Data Platform 1.0" ;
+    dct:creator "Speicher, S.; Arwe, J.; Malhotra, A." ;
+    dct:issued "2015" ;
+    bib:venue "W3C Recommendation" ;
+    bib:status "read" ;
+    bib:curatedFor "pods-review-2026" ;
+    bib:rating 4 ;
+    bib:privateNote "Container-type table is the part reviewers will actually need." .

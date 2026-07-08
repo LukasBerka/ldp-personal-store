@@ -1,0 +1,13 @@
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix bib: <http://example.org/bib#> .
+
+<http://localhost:8000/reading-list/sambra2016>
+    a bib:Entry ;
+    dct:title "Solid: A Platform for Decentralized Social Applications Based on Linked Data" ;
+    dct:creator "Sambra, A. V. et al." ;
+    dct:issued "2016" ;
+    bib:venue "MIT CSAIL Technical Report" ;
+    bib:status "read" ;
+    bib:curatedFor "pods-review-2026" ;
+    bib:rating 4 ;
+    bib:privateNote "Overlaps with our discovery design; compare against UC6." .

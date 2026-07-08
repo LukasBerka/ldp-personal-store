@@ -1,0 +1,4 @@
+# UC3 classmate grant: valid until the end of the semester, otherwise
+# unconstrained.
+<> a <urn:pod:vocab:Policy> ;
+  <urn:pod:vocab:expiresAt> "2026-09-30T23:59:59Z" .

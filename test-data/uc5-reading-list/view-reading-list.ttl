@@ -1,0 +1,23 @@
+@prefix pod:     <urn:pod:vocab:> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# UC5: curated reading list published to a small group for a fixed review
+# period. Only entries tagged with the requested curation tag are exposed;
+# ratings and private notes never leave the pod. The per-view ceiling caps
+# total deliveries across every grant on this view (FR5 "global" mode).
+<> a pod:View ;
+   dcterms:title "Curated reading list" ;
+   dcterms:description "Bibliography entries curated under a given tag (use tag=pods-review-2026): title, authors, year and venue." ;
+   pod:constructTemplate """
+     PREFIX dct: <http://purl.org/dc/terms/>
+     PREFIX bib: <http://example.org/bib#>
+     CONSTRUCT { ?e dct:title ?t ; dct:creator ?a ;
+                    dct:issued ?y ; bib:venue ?v }
+     WHERE     { ?e dct:title ?t ; dct:creator ?a ;
+                    dct:issued ?y ; bib:venue ?v ;
+                    bib:curatedFor ?tag }
+   """ ;
+   pod:contentTypeHint "text/turtle" ;
+   pod:maxViewRetrievals 500 ;
+   pod:parameter [ pod:paramName "tag" ;
+                   pod:paramType "str" ] .

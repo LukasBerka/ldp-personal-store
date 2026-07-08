@@ -1,0 +1,10 @@
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix note: <http://example.org/note#> .
+
+<http://localhost:8000/notes/linear-algebra/eigenvalues>
+    a note:Note ;
+    dct:title "Eigenvalues and diagonalization" ;
+    note:topic "spectral-theory" ;
+    note:course <http://localhost:8000/notes/linear-algebra/> ;
+    dct:created "2026-04-21" ;
+    note:text "An eigenvector of A is a nonzero v with Av = lv. A is diagonalizable iff it has a basis of eigenvectors; symmetric real matrices always are, by the spectral theorem. Exam hint: characteristic polynomial questions recur every year." .

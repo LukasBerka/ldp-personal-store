@@ -1,0 +1,14 @@
+@prefix dct: <http://purl.org/dc/terms/> .
+@prefix bib: <http://example.org/bib#> .
+
+<http://localhost:8000/reading-list/berners-lee2001>
+    a bib:Entry ;
+    dct:title "The Semantic Web" ;
+    dct:creator "Berners-Lee, T.; Hendler, J.; Lassila, O." ;
+    dct:issued "2001" ;
+    bib:venue "Scientific American 284(5)" ;
+    bib:doi "10.1038/scientificamerican0501-34" ;
+    bib:status "read" ;
+    bib:curatedFor "pods-review-2026" ;
+    bib:rating 5 ;
+    bib:privateNote "Opens the motivation section; skip the agent hype when citing." .

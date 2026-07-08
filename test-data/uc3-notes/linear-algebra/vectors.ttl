@@ -1,0 +1,10 @@
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix note: <http://example.org/note#> .
+
+<http://localhost:8000/notes/linear-algebra/vectors>
+    a note:Note ;
+    dct:title "Vectors and vector spaces" ;
+    note:topic "vector-spaces" ;
+    note:course <http://localhost:8000/notes/linear-algebra/> ;
+    dct:created "2026-02-17" ;
+    note:text "A vector space over a field F is a set V with addition and scalar multiplication satisfying eight axioms. Examples: R^n, polynomials of bounded degree, continuous functions on an interval. A subspace is a subset closed under both operations." .

@@ -1,0 +1,10 @@
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix note: <http://example.org/note#> .
+
+<http://localhost:8000/notes/algorithms/graph-search>
+    a note:Note ;
+    dct:title "Graph search: BFS and DFS" ;
+    note:topic "graphs" ;
+    note:course <http://localhost:8000/notes/algorithms/> ;
+    dct:created "2026-04-02" ;
+    note:text "BFS explores by layers and yields shortest paths in unweighted graphs; DFS yields a forest whose edge classification (tree, back, forward, cross) drives cycle detection and topological sort. Both run in O(V + E)." .

@@ -1,0 +1,34 @@
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix shop: <http://example.org/shop#> .
+
+# Second-week state of the same list, for exercising UC4's frequent updates:
+# PUT this over /shopping/list, then fetch the view again. Milk and tomatoes
+# are checked off, bought items were removed, butter and pasta were added.
+<http://localhost:8000/shopping/list>
+    a shop:ShoppingList ;
+    dct:title "Household shopping list" ;
+    dct:modified "2026-07-11T09:05:00Z" .
+
+<http://localhost:8000/shopping/list#milk>
+    a shop:Item ; shop:name "Milk (semi-skimmed)" ;
+    shop:quantity "2 l" ; shop:category "dairy" ; shop:done true .
+
+<http://localhost:8000/shopping/list#eggs>
+    a shop:Item ; shop:name "Eggs, size M" ;
+    shop:quantity "10" ; shop:category "dairy" ; shop:done false .
+
+<http://localhost:8000/shopping/list#tomatoes>
+    a shop:Item ; shop:name "Tomatoes" ;
+    shop:quantity "500 g" ; shop:category "produce" ; shop:done true .
+
+<http://localhost:8000/shopping/list#coffee>
+    a shop:Item ; shop:name "Espresso beans" ;
+    shop:quantity "250 g" ; shop:category "pantry" ; shop:done false .
+
+<http://localhost:8000/shopping/list#butter>
+    a shop:Item ; shop:name "Butter" ;
+    shop:quantity "250 g" ; shop:category "dairy" ; shop:done false .
+
+<http://localhost:8000/shopping/list#pasta>
+    a shop:Item ; shop:name "Penne" ;
+    shop:quantity "2" ; shop:category "pantry" ; shop:done false .

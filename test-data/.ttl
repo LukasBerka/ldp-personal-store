@@ -1,0 +1,5 @@
+
+<http://localhost:8000/> a <http://www.w3.org/ns/ldp#BasicContainer>,
+        <http://www.w3.org/ns/ldp#RDFSource>,
+        <http://www.w3.org/ns/ldp#Resource> .
+

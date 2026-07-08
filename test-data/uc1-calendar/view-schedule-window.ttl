@@ -1,0 +1,22 @@
+@prefix pod:     <urn:pod:vocab:> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# UC1 with FR3 parameters narrowing the output to a date window, e.g. the
+# "next two weeks" of the scenario: from=2026-07-05 & to=2026-07-19.
+# STR() coercion is required because query parameters are bound as plain
+# literals (see the integer-binding caveat in app/views/model.py).
+<> a pod:View ;
+   dcterms:title "Schedule for a date window" ;
+   dcterms:description "Event titles and dates from one calendar, limited to an inclusive from/to date window (ISO dates, e.g. 2026-07-05)." ;
+   pod:constructTemplate """
+     PREFIX dct: <http://purl.org/dc/terms/>
+     PREFIX cal: <http://example.org/cal#>
+     CONSTRUCT { ?e dct:title ?t ; cal:date ?d }
+     WHERE     { ?e dct:title ?t ; cal:date ?d ;
+                    cal:calendar ?calendar .
+                 FILTER(STR(?d) >= STR(?from) && STR(?d) <= STR(?to)) }
+   """ ;
+   pod:contentTypeHint "text/turtle" ;
+   pod:parameter [ pod:paramName "calendar" ; pod:paramType "iri" ] ,
+                 [ pod:paramName "from"     ; pod:paramType "str" ] ,
+                 [ pod:paramName "to"       ; pod:paramType "str" ] .

@@ -1,0 +1,31 @@
+@prefix dct:  <http://purl.org/dc/terms/> .
+@prefix shop: <http://example.org/shop#> .
+
+<http://localhost:8000/shopping/list>
+    a shop:ShoppingList ;
+    dct:title "Household shopping list" ;
+    dct:modified "2026-07-04T18:30:00Z" .
+
+<http://localhost:8000/shopping/list#milk>
+    a shop:Item ; shop:name "Milk (semi-skimmed)" ;
+    shop:quantity "2 l" ; shop:category "dairy" ; shop:done false .
+
+<http://localhost:8000/shopping/list#eggs>
+    a shop:Item ; shop:name "Eggs, size M" ;
+    shop:quantity "10" ; shop:category "dairy" ; shop:done false .
+
+<http://localhost:8000/shopping/list#bread>
+    a shop:Item ; shop:name "Sourdough bread" ;
+    shop:quantity "1" ; shop:category "bakery" ; shop:done true .
+
+<http://localhost:8000/shopping/list#tomatoes>
+    a shop:Item ; shop:name "Tomatoes" ;
+    shop:quantity "500 g" ; shop:category "produce" ; shop:done false .
+
+<http://localhost:8000/shopping/list#coffee>
+    a shop:Item ; shop:name "Espresso beans" ;
+    shop:quantity "250 g" ; shop:category "pantry" ; shop:done false .
+
+<http://localhost:8000/shopping/list#dish-soap>
+    a shop:Item ; shop:name "Dish soap" ;
+    shop:quantity "1" ; shop:category "household" ; shop:done true .
