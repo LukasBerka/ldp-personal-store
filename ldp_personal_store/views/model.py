@@ -59,8 +59,7 @@ class ViewSubmission(BaseModel):
 
 
 def parse_view_submission(graph: Graph) -> ViewSubmission:
-    """Extract a view definition from a client-submitted RDF graph.
-    """
+    """Extract a view definition from a client-submitted RDF graph."""
     subjects = list(graph.subjects(RDF.type, POD_View))
     if len(subjects) != 1:
         raise ValueError("Body must describe exactly one pod:View resource")
@@ -105,8 +104,7 @@ def parse_view_submission(graph: Graph) -> ViewSubmission:
 
 
 def validate_construct_template(template: str) -> None:
-    """Raise ValueError unless *template* is syntactically valid SPARQL CONSTRUCT.
-    """
+    """Raise ValueError unless *template* is syntactically valid SPARQL CONSTRUCT."""
     try:
         parsed = parseQuery(template)
     except ParseException as exc:
@@ -142,8 +140,7 @@ def to_view_graph(
     params: list[ParamDecl],
     max_view_retrievals: int | None = None,
 ) -> Graph:
-    """Serialize a view definition into an rdflib Graph ready for ``write_system``.
-    """
+    """Serialize a view definition into an rdflib Graph ready for ``write_system``."""
     graph = Graph()
     subject = URIRef(uri)
     graph.add((subject, RDF.type, POD_View))
@@ -166,8 +163,7 @@ def to_view_graph(
 
 
 def parse_view_record(graph: Graph, uri: str) -> ViewRecord:
-    """Reconstruct a ViewRecord from its stored RDF triples.
-    """
+    """Reconstruct a ViewRecord from its stored RDF triples."""
     subject = URIRef(uri)
     params: list[ParamDecl] = []
     for pnode in graph.objects(subject, POD_parameter):
@@ -214,9 +210,10 @@ def bind_params(decls: list[ParamDecl], raw: dict[str, str]) -> dict[str, str]:
                 raise ValueError(f"Parameter {decl.name!r} must be an integer") from exc
         elif decl.type == "iri" and not _ABS_IRI.match(value):
             raise ValueError(f"Parameter {decl.name!r} must be an absolute IRI, got {value!r}")
-        elif decl.type in _PARAM_DATATYPE and RDFLiteral(
-            value, datatype=_PARAM_DATATYPE[decl.type]
-        ).ill_typed:
+        elif (
+            decl.type in _PARAM_DATATYPE
+            and RDFLiteral(value, datatype=_PARAM_DATATYPE[decl.type]).ill_typed
+        ):
             # Validate with the same rdflib parser that binds the value at query time,
             # so a form accepted here can never turn ill-typed (and silently match
             # nothing) later. The datatype is applied by binding_datatypes/_to_term.
@@ -228,10 +225,7 @@ def bind_params(decls: list[ParamDecl], raw: dict[str, str]) -> dict[str, str]:
 
 
 def binding_datatypes(decls: list[ParamDecl]) -> dict[str, str]:
-    """Map each declared date/dateTime parameter to its XSD datatype IRI.
-    """
+    """Map each declared date/dateTime parameter to its XSD datatype IRI."""
     return {
-        decl.name: str(_PARAM_DATATYPE[decl.type])
-        for decl in decls
-        if decl.type in _PARAM_DATATYPE
+        decl.name: str(_PARAM_DATATYPE[decl.type]) for decl in decls if decl.type in _PARAM_DATATYPE
     }

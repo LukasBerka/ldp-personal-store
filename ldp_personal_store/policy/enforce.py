@@ -1,5 +1,4 @@
-"""Access-policy enforcement for the consumer view pipeline.
-"""
+"""Access-policy enforcement for the consumer view pipeline."""
 
 from datetime import UTC, datetime
 
@@ -23,8 +22,7 @@ UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def parse_xsd_datetime(value: str) -> datetime:
-    """Parse an xsd:dateTime lexical form into a tz-aware UTC datetime.
-    """
+    """Parse an xsd:dateTime lexical form into a tz-aware UTC datetime."""
     normalized = f"{value[:-1]}+00:00" if value.endswith("Z") else value
     parsed = datetime.fromisoformat(normalized)
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
@@ -36,8 +34,7 @@ def check_policy(
     view_graph: Graph | None,
     view_uri: str | None,
 ) -> None:
-    """Enforce the access policy referenced by the token record.
-    """
+    """Enforce the access policy referenced by the token record."""
     # Per-grant constraints come from the grant's own policy graph.
     if policy_graph is not None:
         now = datetime.now(UTC)

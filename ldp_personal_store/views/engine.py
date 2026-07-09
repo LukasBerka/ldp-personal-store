@@ -1,5 +1,4 @@
-"""Consumer-facing view engine: the per-request RDF pipeline at ``/.engine/``.
-"""
+"""Consumer-facing view engine: the per-request RDF pipeline at ``/.engine/``."""
 
 from datetime import UTC, datetime
 
@@ -55,8 +54,7 @@ async def _record_delivery(
     view_graph: Graph,
     now: str,
 ) -> None:
-    """Bump both counters and append the access-log entry for a confirmed delivery.
-    """
+    """Bump both counters and append the access-log entry for a confirmed delivery."""
     await storage.bump_token_enforcement(token_uri, token_count + 1, now)
     current_view = int(str(view_graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
     await storage.bump_view_enforcement(view_uri, current_view + 1)

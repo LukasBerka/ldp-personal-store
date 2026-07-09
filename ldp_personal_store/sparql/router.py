@@ -1,5 +1,4 @@
-"""SPARQL 1.1 Protocol read-only query endpoint over the in-memory graph.
-"""
+"""SPARQL 1.1 Protocol read-only query endpoint over the in-memory graph."""
 
 import urllib.parse
 from collections.abc import Mapping

@@ -1,5 +1,4 @@
-"""FastAPI dependencies and helpers shared by the storage server's HTTP routers.
-"""
+"""FastAPI dependencies and helpers shared by the storage server's HTTP routers."""
 
 from typing import Annotated
 

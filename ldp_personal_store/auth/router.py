@@ -1,5 +1,4 @@
-"""Management router for the reserved ``.system/`` subtree.
-"""
+"""Management router for the reserved ``.system/`` subtree."""
 
 from typing import Annotated
 
@@ -131,9 +130,7 @@ def issue_grant(
     linked = sorted(str(v) for v in graph.objects(None, POD_linkedView))
     title = next(iter(graph.objects(None, DC_title)), None)
     name = str(title) if title is not None else None
-    plaintext, record_uri = issue_token(
-        backend, request.app.state.system_ns, linked, name=name
-    )
+    plaintext, record_uri = issue_token(backend, request.app.state.system_ns, linked, name=name)
     out = backend.read(record_uri)
     out.add((URIRef(record_uri), POD_tokenSecret, Literal(plaintext, datatype=XSD.string)))
     return Response(

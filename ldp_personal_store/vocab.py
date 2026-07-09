@@ -1,5 +1,4 @@
-"""RDF namespaces and vocabulary terms for the Personal LDP Pod.
-"""
+"""RDF namespaces and vocabulary terms for the Personal LDP Pod."""
 
 from rdflib.namespace import Namespace
 from rdflib.term import URIRef

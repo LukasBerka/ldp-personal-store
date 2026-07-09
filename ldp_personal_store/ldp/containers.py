@@ -1,5 +1,4 @@
-"""Container helpers: parent derivation, member-URI minting, and kind detection.
-"""
+"""Container helpers: parent derivation, member-URI minting, and kind detection."""
 
 import re
 from uuid import uuid4

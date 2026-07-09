@@ -1,5 +1,4 @@
-"""The storage dependency seam.
-"""
+"""The storage dependency seam."""
 
 from collections.abc import Iterator
 from typing import Protocol

@@ -1,5 +1,4 @@
-"""Content negotiation, serialization, ETag, and header helpers for the LDP layer.
-"""
+"""Content negotiation, serialization, ETag, and header helpers for the LDP layer."""
 
 import hashlib
 import re

@@ -1,5 +1,4 @@
-"""OpenAPI documentation metadata shared by the HTTP routers.
-"""
+"""OpenAPI documentation metadata shared by the HTTP routers."""
 
 from typing import Any
 

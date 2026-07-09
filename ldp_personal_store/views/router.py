@@ -1,5 +1,4 @@
-"""Admin-gated management router for stored view definitions.
-"""
+"""Admin-gated management router for stored view definitions."""
 
 import secrets
 from typing import Annotated

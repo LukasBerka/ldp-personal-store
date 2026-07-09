@@ -1,5 +1,4 @@
-"""LDP HTTP layer: RDF resource and container endpoints over the storage backend.
-"""
+"""LDP HTTP layer: RDF resource and container endpoints over the storage backend."""
 
 from typing import Annotated
 
@@ -71,8 +70,7 @@ _BINARY_LINK = link_header([LDP_Resource, LDP_NonRDFSource])
 
 
 def _binary_link(uri: str) -> str:
-    """``Link`` header for the LDP-NR at *uri*.
-    """
+    """``Link`` header for the LDP-NR at *uri*."""
     return f'{_BINARY_LINK}, <{uri}.meta>; rel="describedby"; anchor="{uri}"'
 
 
@@ -203,8 +201,7 @@ def _container_representation(
     include_containment: bool = True,
     include_membership: bool = True,
 ) -> Graph:
-    """Return a response copy of a container *graph* with LDP types synthesized.
-    """
+    """Return a response copy of a container *graph* with LDP types synthesized."""
     subject = URIRef(uri)
     result = Graph()
     for triple in graph:
@@ -231,8 +228,7 @@ def _get_binary_resource(
     uri: str,
     if_none_match: str | None,
 ) -> Response | None:
-    """Stream the binary resource at *uri*, or return None when it is not binary.
-    """
+    """Stream the binary resource at *uri*, or return None when it is not binary."""
     try:
         etag = etag_for_stream(backend.stream_binary(uri))
     except NotABinaryResource:
@@ -455,8 +451,7 @@ def _post_member(
 
 
 def _attach_to_parent(backend: StorageBackend, base_uri: str, member_uri: str) -> None:
-    """Add ``(parent, ldp:contains, member_uri)`` for a PUT-created member.
-    """
+    """Add ``(parent, ldp:contains, member_uri)`` for a PUT-created member."""
     parent = parent_container_uri(member_uri, base_uri)
     if parent == member_uri:
         return
@@ -684,8 +679,7 @@ def delete_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Re
 
 
 def _options_response(backend: StorageBackend, base_uri: str, path: str) -> Response:
-    """Answer OPTIONS with the Allow set the resource actually supports.
-    """
+    """Answer OPTIONS with the Allow set the resource actually supports."""
     uri = base_uri + path
     is_container = False
     is_binary = False

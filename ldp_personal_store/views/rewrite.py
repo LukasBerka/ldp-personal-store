@@ -1,5 +1,4 @@
-"""Rewrite upstream resource URIs in a view's CONSTRUCT result into gated proxy URLs.
-"""
+"""Rewrite upstream resource URIs in a view's CONSTRUCT result into gated proxy URLs."""
 
 from urllib.parse import quote
 
@@ -26,8 +25,7 @@ async def rewrite_upstream_uris(
     bound_params: dict[str, str],
     storage: StorageClient,
 ) -> Graph:
-    """Return a new graph with upstream resource URIs rewritten to engine proxy URLs.
-    """
+    """Return a new graph with upstream resource URIs rewritten to engine proxy URLs."""
     candidates: set[URIRef] = set()
     for subject, _, obj in graph:
         for term in (subject, obj):

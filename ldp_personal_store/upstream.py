@@ -1,5 +1,4 @@
-"""The engine->storage HTTP boundary: client, credential, and consumer validation.
-"""
+"""The engine->storage HTTP boundary: client, credential, and consumer validation."""
 
 import hashlib
 from typing import Annotated
@@ -106,9 +105,7 @@ class StorageClient:
         include_system: bool = False,
         binding_types: dict[str, str] | None = None,
     ) -> Graph:
-        response = await self._query(
-            sparql, bindings, "text/turtle", include_system, binding_types
-        )
+        response = await self._query(sparql, bindings, "text/turtle", include_system, binding_types)
         graph = Graph()
         graph.parse(data=response.text, format="turtle")
         return graph

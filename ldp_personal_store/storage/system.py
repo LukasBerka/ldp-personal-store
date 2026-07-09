@@ -1,5 +1,4 @@
-"""The pod's reserved top-level names and the prefix invariant that guards them.
-"""
+"""The pod's reserved top-level names and the prefix invariant that guards them."""
 
 from pathlib import Path
 
@@ -11,8 +10,7 @@ RESERVED_SEGMENTS: frozenset[str] = frozenset({SYSTEM_SEGMENT, ".engine", "sparq
 
 
 def ensure_system_subtree(storage_root: Path) -> None:
-    """Create the reserved ``.system/`` directory tree under *storage_root*.
-    """
+    """Create the reserved ``.system/`` directory tree under *storage_root*."""
     for subdir in ("views", "tokens", "tokens/policies", "access-log"):
         (storage_root / SYSTEM_SEGMENT / subdir).mkdir(parents=True, exist_ok=True)
 

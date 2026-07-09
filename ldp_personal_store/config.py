@@ -1,5 +1,4 @@
-"""Application configuration for the Personal LDP Pod.
-"""
+"""Application configuration for the Personal LDP Pod."""
 
 from functools import lru_cache
 from pathlib import Path

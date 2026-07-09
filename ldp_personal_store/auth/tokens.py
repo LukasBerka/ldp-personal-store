@@ -1,5 +1,4 @@
-"""Opaque bearer token issuance, validation, revocation, and admin bootstrap.
-"""
+"""Opaque bearer token issuance, validation, revocation, and admin bootstrap."""
 
 import hashlib
 import hmac
@@ -36,6 +35,7 @@ SELECT ?tokenUri ?stored ?tokenType WHERE {
     FILTER(str(?stored) = str(?presented))
 }
 """
+
 
 @dataclass(frozen=True)
 class TokenRecord:

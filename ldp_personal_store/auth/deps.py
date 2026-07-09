@@ -1,5 +1,4 @@
-"""FastAPI bearer-token dependencies for the storage server's HTTP surface.
-"""
+"""FastAPI bearer-token dependencies for the storage server's HTTP surface."""
 
 from typing import Annotated
 

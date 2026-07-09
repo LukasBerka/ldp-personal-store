@@ -1,5 +1,4 @@
-"""Filesystem-backed :class:`StorageBackend` over an in-memory rdflib dataset.
-"""
+"""Filesystem-backed :class:`StorageBackend` over an in-memory rdflib dataset."""
 
 import re
 import threading
@@ -53,8 +52,7 @@ def _path_to_uri(path: Path, storage_root: Path, base_uri: str) -> str:
 
 
 def _guard_within_root(candidate: Path, storage_root: Path, uri: str) -> Path:
-    """Resolve *candidate* and reject any path escaping *storage_root*.
-    """
+    """Resolve *candidate* and reject any path escaping *storage_root*."""
     resolved = candidate.resolve()
     if not resolved.is_relative_to(storage_root.resolve()):
         raise StorageError(f"URI maps outside storage root: {uri!r}")

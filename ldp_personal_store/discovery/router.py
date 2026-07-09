@@ -1,5 +1,4 @@
-"""Consumer-facing discovery container at ``/.engine/discovery``.
-"""
+"""Consumer-facing discovery container at ``/.engine/discovery``."""
 
 from fastapi import APIRouter, Request, Response
 from rdflib import BNode, Graph, Literal, URIRef

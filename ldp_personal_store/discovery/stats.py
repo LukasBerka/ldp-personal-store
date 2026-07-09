@@ -1,5 +1,4 @@
-"""On-demand statistics over the append-only access log.
-"""
+"""On-demand statistics over the append-only access log."""
 
 from pydantic import BaseModel
 
@@ -7,8 +6,7 @@ from ldp_personal_store.upstream import StorageClient
 
 # The POD vocabulary is a fixed urn: namespace, never derived from the pod's base URI.
 _TOTAL_SPARQL = (
-    "PREFIX pod: <urn:pod:vocab:> "
-    "SELECT (COUNT(?e) AS ?total) WHERE { ?e a pod:AccessLogEntry }"
+    "PREFIX pod: <urn:pod:vocab:> SELECT (COUNT(?e) AS ?total) WHERE { ?e a pod:AccessLogEntry }"
 )
 _BY_VIEW_SPARQL = (
     "PREFIX pod: <urn:pod:vocab:> "

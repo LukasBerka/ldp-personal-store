@@ -1,5 +1,4 @@
-"""Storage-side request-path write surface under ``.system/``.
-"""
+"""Storage-side request-path write surface under ``.system/``."""
 
 import secrets
 

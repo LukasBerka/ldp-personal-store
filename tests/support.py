@@ -115,7 +115,8 @@ def read_int_property(
     graph = Graph()
     graph.parse(data=response.text, format="turtle")
     value = graph.value(URIRef(uri), URIRef(str(predicate)))
-    return int(value) if value is not None else None
+    return int(str(value)) if value is not None else None
+
 
 _POLICY_CONSTRAINT_PROPS = {
     "expires_at": (POD_expiresAt, XSD.dateTime),
