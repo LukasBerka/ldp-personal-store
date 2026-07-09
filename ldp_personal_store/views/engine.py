@@ -17,7 +17,7 @@ from ldp_personal_store.upstream import (
     StorageDep,
     UpstreamNotFound,
 )
-from ldp_personal_store.views.bindings import inject_values
+from ldp_personal_store.views.bindings import BindingError, inject_values
 from ldp_personal_store.views.model import (
     ViewRecord,
     bind_params,
@@ -116,7 +116,11 @@ async def get_view(
 
     # Parameters bind through an injected VALUES block in the query text — the portable,
     # injection-safe equivalent of initBindings — so the data source needs no extension.
-    result = await storage.construct(inject_values(view.construct_template, bound, view.params))
+    try:
+        query = inject_values(view.construct_template, bound, view.params)
+    except BindingError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result = await storage.construct(query)
 
     # Replace raw storage URIs of shared resources with gated engine proxy URLs so
     # the consumer follows every reference through the engine, never storage directly.
@@ -221,7 +225,11 @@ async def get_blob(
 
     check_policy(token, await _load_policy(storage, token.policy_ref), graph, view_uri)
 
-    result = await storage.construct(inject_values(view.construct_template, bound, view.params))
+    try:
+        query = inject_values(view.construct_template, bound, view.params)
+    except BindingError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result = await storage.construct(query)
 
     result_terms = {
         str(term)

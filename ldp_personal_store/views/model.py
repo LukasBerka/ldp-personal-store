@@ -206,6 +206,10 @@ def parse_view_record(graph: Graph, uri: str) -> ViewRecord:
 
 
 _ABS_IRI = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:.+")
+# Characters an IRIREF may not contain (SPARQL grammar): control chars, space, and
+# < > " { } | ^ ` \ . An iri value carrying any of these is not a serializable IRI term,
+# so it is rejected at bind time (422) rather than failing later at term serialization.
+_IRI_FORBIDDEN = re.compile('[\x00-\x20<>"{}|^`\\\\]')
 _INT_ADAPTER: TypeAdapter[int] = TypeAdapter(int)
 
 
@@ -228,7 +232,7 @@ def bind_params(decls: list[ParamDecl], raw: dict[str, str]) -> dict[str, str]:
                 _INT_ADAPTER.validate_python(value)
             except ValidationError as exc:
                 raise ValueError(f"Parameter {decl.name!r} must be an integer") from exc
-        elif decl.type == "iri" and not _ABS_IRI.match(value):
+        elif decl.type == "iri" and (not _ABS_IRI.match(value) or _IRI_FORBIDDEN.search(value)):
             raise ValueError(f"Parameter {decl.name!r} must be an absolute IRI, got {value!r}")
         elif (
             decl.type in _PARAM_DATATYPE

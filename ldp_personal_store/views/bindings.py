@@ -13,7 +13,7 @@ arbitrary SPARQL server binds it, ours included, with no server-side cooperation
 from pyparsing.exceptions import ParseException
 from rdflib.plugins.sparql.parser import parseQuery
 
-from ldp_personal_store.views.model import ParamDecl, param_term
+from ldp_personal_store.views.model import ParamDecl, ParamTypeName, param_term
 
 
 class BindingError(ValueError):
@@ -103,10 +103,22 @@ def _group_bounds(query: str, open_brace: int) -> int:
     raise BindingError("unbalanced braces in view template")
 
 
+def _serialize_term(value: str, param_type: ParamTypeName) -> str:
+    # rdflib refuses to serialize a term whose lexical form is not a valid RDF term
+    # (e.g. an IRI carrying a space) with a bare Exception; contain it as a BindingError
+    # so a hostile or malformed value is a controlled failure, never an escaped 500.
+    try:
+        return param_term(value, param_type).n3()
+    except BindingError:
+        raise
+    except Exception as exc:  # noqa: BLE001  rdflib raises bare Exception on bad terms
+        raise BindingError(f"value {value!r} is not a serializable {param_type} term") from exc
+
+
 def _values_block(bound: dict[str, str], decls: list[ParamDecl]) -> str:
     ordered = [decl for decl in decls if decl.name in bound]
     variables = " ".join(f"?{decl.name}" for decl in ordered)
-    terms = " ".join(param_term(bound[decl.name], decl.type).n3() for decl in ordered)
+    terms = " ".join(_serialize_term(bound[decl.name], decl.type) for decl in ordered)
     return f"VALUES ({variables}) {{ ({terms}) }}"
 
 
