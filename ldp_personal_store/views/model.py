@@ -32,6 +32,26 @@ ParamTypeName = Literal["str", "int", "iri", "date", "dateTime"]
 # mapped to the XSD datatype the value carries into the query.
 _PARAM_DATATYPE: dict[str, URIRef] = {"date": XSD.date, "dateTime": XSD.dateTime}
 
+# Same scheme test the storage backend uses to decide URIRef-vs-Literal coercion, so a
+# value bound portably (injected VALUES) is the identical term the initBindings path made.
+_TERM_IRI_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+
+def param_term(value: str, param_type: ParamTypeName) -> URIRef | RDFLiteral:
+    """The rdflib term a validated parameter *value* of *param_type* binds as.
+
+    Mirrors the storage backend's term coercion exactly, so injecting the term into a
+    query (portable ``VALUES`` binding) reproduces the same RDF term the non-standard
+    initBindings path produced: ``date``/``dateTime`` bind as typed literals,
+    absolute-IRI-shaped values as ``URIRef``\\ s, and everything else as plain literals.
+    """
+    datatype = _PARAM_DATATYPE.get(param_type)
+    if datatype is not None:
+        return RDFLiteral(value, datatype=datatype)
+    if _TERM_IRI_SCHEME.match(value):
+        return URIRef(value)
+    return RDFLiteral(value)
+
 
 class ParamDecl(BaseModel):
     name: str

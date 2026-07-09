@@ -17,10 +17,10 @@ from ldp_personal_store.upstream import (
     StorageDep,
     UpstreamNotFound,
 )
+from ldp_personal_store.views.bindings import inject_values
 from ldp_personal_store.views.model import (
     ViewRecord,
     bind_params,
-    binding_datatypes,
     parse_view_record,
 )
 from ldp_personal_store.views.rewrite import rewrite_upstream_uris
@@ -114,9 +114,9 @@ async def get_view(
     # Policy decision on the fully-validated request, before any data is produced.
     check_policy(token, await _load_policy(storage, token.policy_ref), graph, view_uri)
 
-    result = await storage.construct(
-        view.construct_template, bindings=bound, binding_types=binding_datatypes(view.params)
-    )
+    # Parameters bind through an injected VALUES block in the query text — the portable,
+    # injection-safe equivalent of initBindings — so the data source needs no extension.
+    result = await storage.construct(inject_values(view.construct_template, bound, view.params))
 
     # Replace raw storage URIs of shared resources with gated engine proxy URLs so
     # the consumer follows every reference through the engine, never storage directly.
@@ -221,9 +221,7 @@ async def get_blob(
 
     check_policy(token, await _load_policy(storage, token.policy_ref), graph, view_uri)
 
-    result = await storage.construct(
-        view.construct_template, bindings=bound, binding_types=binding_datatypes(view.params)
-    )
+    result = await storage.construct(inject_values(view.construct_template, bound, view.params))
 
     result_terms = {
         str(term)
