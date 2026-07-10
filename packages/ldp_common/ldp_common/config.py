@@ -35,10 +35,10 @@ class Settings(BaseSettings):
     # "terminated" — a trusted reverse proxy terminates TLS upstream (trust the deployment)
     tls_mode: Literal["off", "required", "terminated"] = "off"
 
-    # TLS key and certificate for tls_mode="required". The canonical `python -m
-    # ldp_personal_store.main` launch path passes both to uvicorn and refuses to start without
-    # them, so a "required" pod can never silently serve plaintext; a direct
-    # uvicorn launch may supply them as --ssl-keyfile/--ssl-certfile instead.
+    # TLS key and certificate for tls_mode="required". The canonical `python -m ldp_pod`
+    # launch path passes both to uvicorn and refuses to start without them, so a
+    # "required" pod can never silently serve plaintext; a direct uvicorn launch may
+    # supply them as --ssl-keyfile/--ssl-certfile instead.
     ssl_keyfile: Path | None = None
     ssl_certfile: Path | None = None
 
@@ -69,10 +69,52 @@ class Settings(BaseSettings):
     # it is a stable logical name the engine and store agree on.
     state_graph: str = "urn:ldp:engine-state"
 
+    # The data source the engine queries for view CONSTRUCTs and binary reads, as opposed
+    # to the state store (storage_url) that holds the engine's own records. Left unset it
+    # defaults to storage_url — the co-located default where one server holds both. Set it
+    # to point the engine at a separate SPARQL/LDP data source (e.g. a third-party store).
+    data_source_url: str | None = None
+
+    # The namespace the data-source resources carry: what the engine treats as an
+    # "upstream" URI to rewrite into a gated proxy URL and to guard the blob endpoint
+    # against. Independent of base_uri (the engine's own public base). Left unset it
+    # defaults to base_uri — correct when the data source is the co-located pod.
+    data_source_base_uri: str | None = None
+
+    # Credential the engine presents to the data source. Left unset it defaults to
+    # engine_token (co-located: same credential as the state store).
+    data_source_token: str | None = None
+
+    # Auth scheme the engine uses against the data source: a bearer token, HTTP Basic
+    # (data_source_token as "user:password"), or no credential at all.
+    data_source_auth: Literal["bearer", "basic", "none"] = "bearer"
+
     @field_validator("base_uri")
     @classmethod
     def _ensure_trailing_slash(cls, v: str) -> str:
         return v if v.endswith("/") else v + "/"
+
+    @field_validator("data_source_base_uri")
+    @classmethod
+    def _ensure_optional_trailing_slash(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return v if v.endswith("/") else v + "/"
+
+    @property
+    def effective_data_source_url(self) -> str | None:
+        """The data-source URL, defaulting to the state store (co-located)."""
+        return self.data_source_url if self.data_source_url is not None else self.storage_url
+
+    @property
+    def effective_data_source_base_uri(self) -> str:
+        """The namespace data-source resources carry, defaulting to the engine base."""
+        return self.data_source_base_uri if self.data_source_base_uri is not None else self.base_uri
+
+    @property
+    def effective_data_source_token(self) -> str | None:
+        """The data-source credential, defaulting to the engine token (co-located)."""
+        return self.data_source_token if self.data_source_token is not None else self.engine_token
 
 
 @lru_cache

@@ -123,7 +123,7 @@ async def get_view(
     # the consumer follows every reference through the engine, never storage directly.
     engine_base = str(request.app.state.engine_ns)
     out_graph = await rewrite_upstream_uris(
-        result, settings.base_uri, engine_base, view_id, bound, storage
+        result, settings.effective_data_source_base_uri, engine_base, view_id, bound, storage
     )
 
     body = out_graph.serialize(format=rdflib_format_for(view.content_type_hint), encoding="utf-8")
@@ -208,7 +208,8 @@ async def get_blob(
     upstream_uri = request.query_params.get("uri")
     if upstream_uri is None:
         raise HTTPException(status_code=400)
-    if not upstream_uri.startswith(settings.base_uri):
+    # The target must be a data-source resource, never the engine's own state records.
+    if not upstream_uri.startswith(settings.effective_data_source_base_uri):
         raise HTTPException(status_code=400)
     if upstream_uri.startswith(str(request.app.state.system_ns)):
         raise HTTPException(status_code=400)

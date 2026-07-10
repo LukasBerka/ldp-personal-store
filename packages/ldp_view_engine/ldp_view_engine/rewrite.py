@@ -15,22 +15,26 @@ _RESOURCE_URIS_QUERY = "SELECT DISTINCT ?r WHERE { ?r ?p ?o }"
 
 async def rewrite_upstream_uris(
     graph: Graph,
-    base_uri: str,
+    data_source_base: str,
     engine_base: str,
     view_id: str,
     bound_params: dict[str, str],
     storage: StorageClient,
 ) -> Graph:
-    """Return a new graph with upstream resource URIs rewritten to engine proxy URLs."""
+    """Return a new graph with upstream resource URIs rewritten to engine proxy URLs.
+
+    An "upstream" URI is one under *data_source_base* — the namespace the data source's
+    resources carry — which is independent of the engine's own public base.
+    """
     candidates: set[URIRef] = set()
     for subject, _, obj in graph:
         for term in (subject, obj):
-            if isinstance(term, URIRef) and str(term).startswith(base_uri):
+            if isinstance(term, URIRef) and str(term).startswith(data_source_base):
                 candidates.add(term)
     if not candidates:
         return graph
 
-    existing = {row["r"] for row in await storage.select(_RESOURCE_URIS_QUERY) if "r" in row}
+    existing = {row["r"] for row in await storage.select_data(_RESOURCE_URIS_QUERY) if "r" in row}
     mapping: dict[URIRef, URIRef] = {}
     for uri in candidates:
         if str(uri) in existing:

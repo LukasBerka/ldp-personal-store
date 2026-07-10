@@ -28,22 +28,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     check_tls_precondition(settings)
     if settings.storage_url is None:
         raise RuntimeError(
-            "the engine role requires LDP_STORAGE_URL (the storage server it reads "
-            "through); the bundled single-process pod is ldp_pod, not this app."
+            "the engine role requires LDP_STORAGE_URL (the state store it keeps its records "
+            "in); the bundled single-process pod is ldp_pod, not this app."
         )
-    if settings.engine_token is None:
+    engine_token = settings.engine_token
+    if engine_token is None:
         raise RuntimeError(
             "the engine role requires LDP_ENGINE_TOKEN — the credential the storage server "
-            "seeded for the engine — to authenticate its storage requests."
+            "seeded for the engine — to authenticate its state-store requests."
+        )
+    if settings.effective_data_source_url is None:
+        raise RuntimeError(
+            "the engine role requires a data source: set LDP_DATA_SOURCE_URL, or "
+            "LDP_STORAGE_URL to co-locate the data with the state store."
         )
     app.state.system_ns = make_system_ns(settings.base_uri)
     app.state.engine_ns = make_engine_ns(settings.base_uri)
     http = httpx.AsyncClient()
     app.state.storage = StorageClient(
-        http=http,
-        token=settings.engine_token,
+        http,
         base_uri=settings.base_uri,
-        storage_url=settings.storage_url,
+        state_token=engine_token,
+        state_url=settings.storage_url,
+        data_url=settings.effective_data_source_url,
+        data_base_uri=settings.effective_data_source_base_uri,
+        data_token=settings.effective_data_source_token,
+        data_auth=settings.data_source_auth,
         state_graph=settings.state_graph,
     )
     try:

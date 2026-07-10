@@ -38,7 +38,7 @@ async def validate_via_storage(
     bound_lookup = LOOKUP_QUERY.replace(
         "WHERE {", f'WHERE {{ VALUES (?presented) {{ ("{presented_hash}") }}', 1
     )
-    rows = await storage.select(storage.state_scoped(bound_lookup))
+    rows = await storage.select_state(storage.state_scoped(bound_lookup))
     token_uri, matched_type = match_token_rows(rows, presented_hash, (required_type,))
     try:
         record = await storage.read_graph(token_uri)

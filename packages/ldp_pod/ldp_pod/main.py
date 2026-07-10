@@ -56,10 +56,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             base_url=settings.base_uri,
         )
     app.state.storage = StorageClient(
-        http=http,
-        token=engine_plaintext,
+        http,
         base_uri=settings.base_uri,
-        storage_url=settings.storage_url,
+        state_token=engine_plaintext,
+        state_url=settings.storage_url,
+        data_url=settings.effective_data_source_url,
+        data_base_uri=settings.effective_data_source_base_uri,
+        data_token=settings.effective_data_source_token,
+        data_auth=settings.data_source_auth,
         state_graph=settings.state_graph,
     )
     try:
