@@ -1,5 +1,5 @@
 [project]
-name = "ldp_personal_store"
+name = "ldp-pod-workspace"
 version = "0.1.0"
 description = "Personal LDP pod: share query-defined slices of your data under revocable, policy-bounded credentials"
 readme = "README.md"
@@ -8,14 +8,20 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "fastapi[standard]>=0.136.3",
-    "httpx>=0.28.1",
-    "pydantic-settings>=2.14.1",
-    "rdflib>=7.6.0",
+    "ldp_pod",
 ]
 
 [tool.uv]
 package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+ldp_common = { workspace = true }
+ldp_personal_store = { workspace = true }
+ldp_view_engine = { workspace = true }
+ldp_pod = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -27,16 +33,35 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["."]
-# The bundled W3C LDP Test Suite harness is not a part of the shipped package
+src = [
+    "packages/ldp_common",
+    "packages/ldp_personal_store",
+    "packages/ldp_view_engine",
+    "packages/ldp_pod",
+    ".",
+]
+# The bundled W3C LDP Test Suite harness is not a part of the shipped packages
 extend-exclude = ["w3c_ldp_test_suite"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
 
 [tool.pyrefly]
-project-includes = ["ldp_personal_store", "tests"]
-search-path = ["."]
+project-includes = [
+    "packages/ldp_common/ldp_common",
+    "packages/ldp_personal_store/ldp_personal_store",
+    "packages/ldp_view_engine/ldp_view_engine",
+    "packages/ldp_pod/ldp_pod",
+    "tests",
+    "tests_internal",
+]
+search-path = [
+    "packages/ldp_common",
+    "packages/ldp_personal_store",
+    "packages/ldp_view_engine",
+    "packages/ldp_pod",
+    ".",
+]
 python-version = "3.14"
 
 [tool.pytest.ini_options]

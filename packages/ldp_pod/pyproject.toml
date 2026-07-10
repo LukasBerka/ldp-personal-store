@@ -1,0 +1,27 @@
+[project]
+name = "ldp_pod"
+version = "0.1.0"
+description = "Bundled Personal LDP Pod: the view engine and reference storage composed into one process"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi[standard]>=0.136.3",
+    "httpx>=0.28.1",
+    "ldp_common",
+    "ldp_personal_store",
+    "ldp_view_engine",
+]
+
+[project.scripts]
+ldp-pod = "ldp_pod.main:run"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+
+[tool.uv.sources]
+ldp_common = { workspace = true }
+ldp_personal_store = { workspace = true }
+ldp_view_engine = { workspace = true }

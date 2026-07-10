@@ -1,0 +1,20 @@
+[project]
+name = "ldp_personal_store"
+version = "0.1.0"
+description = "Reference storage: a standard LDP + SPARQL 1.1 server and the pod owner's administration surface"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi[standard]>=0.136.3",
+    "rdflib>=7.6.0",
+    "ldp_common",
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
+
+[tool.uv.sources]
+ldp_common = { workspace = true }
