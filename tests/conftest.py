@@ -5,8 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ldp_common.config import get_settings
-from ldp_personal_store.main import app
 from ldp_personal_store.storage.filesystem import FilesystemBackend
+from ldp_pod.main import app
 from tests.support import ADMIN_TOKEN, BASE
 
 

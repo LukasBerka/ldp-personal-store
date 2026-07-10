@@ -1,25 +1,17 @@
-"""The engine->storage HTTP boundary: client, credential, and consumer validation."""
+"""The engine->storage HTTP boundary: the client that speaks the pure standard contract.
 
-import hashlib
+Every call is standard LDP + SPARQL 1.1 over HTTP — conditional writes, container POST,
+SPARQL query with a ``FROM``-named state graph and injected ``VALUES`` — so the engine
+runs against any conforming store, our reference storage included.
+"""
+
 import re
-from typing import Annotated
 
 import httpx
-from fastapi import Depends, Request
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import XSD
 
-from ldp_common.http import require_bearer
-from ldp_common.tokenrecord import (
-    LOOKUP_QUERY,
-    TokenRecord,
-    match_token_rows,
-    token_record_from_graph,
-    unauthorized,
-)
 from ldp_common.vocab import (
-    POD_AdminToken,
-    POD_ConsumerToken,
     POD_enforcementCount,
     POD_lastUsedAt,
     POD_viewRetrievalCount,
@@ -207,57 +199,3 @@ class StorageClient:
             headers={**self._headers, "Content-Type": "text/turtle"},
         )
         self._expect(response, 201)
-
-
-async def validate_via_storage(
-    storage: StorageClient,
-    raw_token: str,
-    required_type: URIRef,
-) -> TokenRecord:
-    """Resolve a token presented to the engine through the storage HTTP surface.
-
-    Hashes the presented token, finds candidate records by digest over the SPARQL
-    endpoint, requires *required_type* among the matching record's markers, and
-    reads the record over the system surface — every failure raises the same 401.
-    The matching and record-assembly steps are the storage-side validator's own
-    helpers, so the two validators cannot drift.
-    """
-    presented_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    # The digest binds through a standard VALUES block (a SHA-256 hex string, so free of
-    # any character that could escape the literal) and the lookup is scoped to the state
-    # graph — no binding-* or include-system extension on the wire.
-    bound_lookup = LOOKUP_QUERY.replace(
-        "WHERE {", f'WHERE {{ VALUES (?presented) {{ ("{presented_hash}") }}', 1
-    )
-    rows = await storage.select(storage.state_scoped(bound_lookup))
-    token_uri, matched_type = match_token_rows(rows, presented_hash, (required_type,))
-    try:
-        record = await storage.read_graph(token_uri)
-    except UpstreamNotFound as exc:
-        raise unauthorized() from exc
-    return token_record_from_graph(record, token_uri, matched_type)
-
-
-def get_storage(request: Request) -> StorageClient:
-    return request.app.state.storage
-
-
-StorageDep = Annotated[StorageClient, Depends(get_storage)]
-
-
-async def get_engine_consumer_token(
-    raw: Annotated[str, Depends(require_bearer)],
-    storage: StorageDep,
-) -> TokenRecord:
-    return await validate_via_storage(storage, raw, POD_ConsumerToken)
-
-
-async def get_engine_admin_token(
-    raw: Annotated[str, Depends(require_bearer)],
-    storage: StorageDep,
-) -> TokenRecord:
-    return await validate_via_storage(storage, raw, POD_AdminToken)
-
-
-EngineConsumerDep = Annotated[TokenRecord, Depends(get_engine_consumer_token)]
-EngineAdminDep = Annotated[TokenRecord, Depends(get_engine_admin_token)]

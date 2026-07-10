@@ -5,7 +5,7 @@ from urllib.parse import quote
 from rdflib import Graph, URIRef
 from rdflib.term import Node
 
-from ldp_personal_store.upstream import StorageClient
+from ldp_view_engine.client import StorageClient
 
 # Every stored resource — RDF documents and the metadata sidecar of each binary — is a
 # subject in the data scope, so a plain distinct-subjects query lists them without the

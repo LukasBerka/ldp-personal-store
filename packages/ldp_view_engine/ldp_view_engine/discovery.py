@@ -20,14 +20,9 @@ from ldp_common.vocab import (
     POD_paramType,
     POD_View,
 )
-from ldp_personal_store.discovery.stats import StatsResponse, compute_stats
-from ldp_personal_store.upstream import (
-    EngineAdminDep,
-    EngineConsumerDep,
-    StorageClient,
-    StorageDep,
-    UpstreamNotFound,
-)
+from ldp_view_engine.auth import EngineAdminDep, EngineConsumerDep, StorageDep
+from ldp_view_engine.client import StorageClient, UpstreamNotFound
+from ldp_view_engine.stats import StatsResponse, compute_stats
 
 router = APIRouter(prefix="/.engine", tags=["discovery"])
 

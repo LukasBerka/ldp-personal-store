@@ -15,15 +15,11 @@ from ldp_common.viewmodel import (
     bind_params,
     parse_view_record,
 )
-from ldp_personal_store.policy.enforce import check_policy
-from ldp_personal_store.upstream import (
-    EngineConsumerDep,
-    StorageClient,
-    StorageDep,
-    UpstreamNotFound,
-)
-from ldp_personal_store.views.bindings import BindingError, inject_values
-from ldp_personal_store.views.rewrite import rewrite_upstream_uris
+from ldp_view_engine.auth import EngineConsumerDep, StorageDep
+from ldp_view_engine.bindings import BindingError, inject_values
+from ldp_view_engine.client import StorageClient, UpstreamNotFound
+from ldp_view_engine.policy import check_policy
+from ldp_view_engine.rewrite import rewrite_upstream_uris
 
 router = APIRouter(prefix="/.engine", tags=["engine"])
 

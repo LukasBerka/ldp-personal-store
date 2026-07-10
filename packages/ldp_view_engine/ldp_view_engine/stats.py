@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from ldp_personal_store.upstream import StorageClient
+from ldp_view_engine.client import StorageClient
 
 # The POD vocabulary is a fixed urn: namespace, never derived from the pod's base URI.
 _TOTAL_SPARQL = (
