@@ -15,7 +15,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from ldp_common.appkit import add_cors, add_health, install_openapi_security, run_uvicorn
-from ldp_common.config import check_tls_precondition, get_cors_settings, get_settings
+from ldp_common.config import (
+    check_tls_precondition,
+    get_cors_settings,
+    get_settings,
+    require_admin_token,
+)
 from ldp_common.vocab import make_engine_ns, make_system_ns
 from ldp_personal_store.app import init_root_container
 from ldp_personal_store.auth.router import router as system_router
@@ -35,12 +40,21 @@ from ldp_view_engine.engine import router as engine_router
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     check_tls_precondition(settings)
+    # The bundled pod reaches storage in-process (ASGI), which routes every request to
+    # this app regardless of its URL. A distinct data source is therefore unreachable from
+    # the bundled process — refuse rather than silently serve view data from ourselves.
+    if settings.storage_url is None and settings.data_source_url is not None:
+        raise RuntimeError(
+            "the bundled pod reaches storage in-process and cannot target a separate "
+            "LDP_DATA_SOURCE_URL; run the engine as its own process (python -m "
+            "ldp_view_engine.app) for a separate data source, or unset LDP_DATA_SOURCE_URL."
+        )
     app.state.system_ns = make_system_ns(settings.base_uri)
     app.state.engine_ns = make_engine_ns(settings.base_uri)
     backend = FilesystemBackend(storage_root=settings.storage_root, base_uri=settings.base_uri)
     app.state.backend = backend
     init_root_container(backend, settings.base_uri)
-    bootstrap_admin_token(backend, app.state.system_ns, admin_token=settings.admin_token)
+    bootstrap_admin_token(backend, app.state.system_ns, admin_token=require_admin_token(settings))
 
     # The engine's storage credential and HTTP client: the bundled deployment talks
     # to this same app over an in-process ASGI transport — the identical HTTP

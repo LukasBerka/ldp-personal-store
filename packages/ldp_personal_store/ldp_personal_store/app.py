@@ -14,7 +14,12 @@ from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
 from ldp_common.appkit import add_cors, add_health, install_openapi_security, run_uvicorn
-from ldp_common.config import check_tls_precondition, get_cors_settings, get_settings
+from ldp_common.config import (
+    check_tls_precondition,
+    get_cors_settings,
+    get_settings,
+    require_admin_token,
+)
 from ldp_common.vocab import (
     LDP_BasicContainer,
     LDP_RDFSource,
@@ -59,7 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     backend = FilesystemBackend(storage_root=settings.storage_root, base_uri=settings.base_uri)
     app.state.backend = backend
     init_root_container(backend, settings.base_uri)
-    bootstrap_admin_token(backend, app.state.system_ns, admin_token=settings.admin_token)
+    bootstrap_admin_token(backend, app.state.system_ns, admin_token=require_admin_token(settings))
     # Seed the engine's storage credential so a separately-deployed engine can
     # authenticate against this server; the plaintext is set out of band via
     # LDP_ENGINE_TOKEN in a split deployment.

@@ -42,12 +42,14 @@ class Settings(BaseSettings):
     ssl_keyfile: Path | None = None
     ssl_certfile: Path | None = None
 
-    # The pod owner's admin credential (PLAINTEXT). Required and has no default: the
-    # server refuses to start when it is unset, so a pod never comes up with an absent
-    # or default admin token. Only its SHA-256 hash is persisted — the plaintext is
-    # never written to disk or the log. The owner chooses the value, e.g. the output
-    # of `openssl rand -base64 32`.
-    admin_token: str
+    # The pod owner's admin credential (PLAINTEXT). Required for the storage and bundled
+    # roles — those lifespans refuse to boot without it (see require_admin_token), so a pod
+    # never comes up with an absent or default admin token. The standalone view-engine role
+    # does not use it (it validates the *presented* request token against storage), so it is
+    # optional at this shared level and enforced per role instead. Only its SHA-256 hash is
+    # persisted — the plaintext is never written to disk or the log. The owner chooses the
+    # value, e.g. the output of `openssl rand -base64 32`.
+    admin_token: str | None = None
 
     # Optional PLAINTEXT engine token: the credential the view engine presents on the
     # engine->storage boundary. Only its SHA-256 hash is persisted. Left unset, the
@@ -146,6 +148,20 @@ class CorsSettings(BaseSettings):
 @lru_cache
 def get_cors_settings() -> CorsSettings:
     return CorsSettings()
+
+
+def require_admin_token(settings: Settings) -> str:
+    """The admin credential for the storage and bundled roles; refuse to boot without it.
+
+    The engine role does not call this — it holds no admin token, authenticating owner
+    requests by validating the presented bearer against storage instead.
+    """
+    if settings.admin_token is None:
+        raise RuntimeError(
+            "LDP_ADMIN_TOKEN is required: the storage and bundled roles refuse to start "
+            "without it, so a pod never comes up with an absent or default admin token."
+        )
+    return settings.admin_token
 
 
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost"})

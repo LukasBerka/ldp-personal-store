@@ -15,6 +15,7 @@ from ldp_common.viewmodel import (
     bind_params,
     parse_view_record,
 )
+from ldp_common.vocab import make_system_ns
 from ldp_view_engine.auth import EngineConsumerDep, StorageDep
 from ldp_view_engine.bindings import BindingError, inject_values
 from ldp_view_engine.client import StorageClient, UpstreamNotFound
@@ -208,10 +209,13 @@ async def get_blob(
     upstream_uri = request.query_params.get("uri")
     if upstream_uri is None:
         raise HTTPException(status_code=400)
-    # The target must be a data-source resource, never the engine's own state records.
-    if not upstream_uri.startswith(settings.effective_data_source_base_uri):
+    # The target must be a data-source resource, never a reserved state record. Both checks
+    # key off the data source's own namespace (its base and its .system/ subtree), which is
+    # what open_binary_stream reaches — independent of the engine's own public base.
+    data_source_base = settings.effective_data_source_base_uri
+    if not upstream_uri.startswith(data_source_base):
         raise HTTPException(status_code=400)
-    if upstream_uri.startswith(str(request.app.state.system_ns)):
+    if upstream_uri.startswith(str(make_system_ns(data_source_base))):
         raise HTTPException(status_code=400)
 
     graph, view = await _load_view(storage, view_uri)

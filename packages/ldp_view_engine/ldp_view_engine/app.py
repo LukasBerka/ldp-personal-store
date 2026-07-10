@@ -37,11 +37,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             "the engine role requires LDP_ENGINE_TOKEN — the credential the storage server "
             "seeded for the engine — to authenticate its state-store requests."
         )
-    if settings.effective_data_source_url is None:
-        raise RuntimeError(
-            "the engine role requires a data source: set LDP_DATA_SOURCE_URL, or "
-            "LDP_STORAGE_URL to co-locate the data with the state store."
-        )
+    # The data source defaults to the state store when LDP_DATA_SOURCE_URL is unset, so a
+    # state store (checked above) always yields a data source too — no separate guard needed.
     app.state.system_ns = make_system_ns(settings.base_uri)
     app.state.engine_ns = make_engine_ns(settings.base_uri)
     http = httpx.AsyncClient()
