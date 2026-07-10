@@ -32,8 +32,10 @@ SECURITY_SCHEMES = {
         "scheme": "bearer",
         "description": (
             "The view engine's internal credential for the storage surface, bootstrapped "
-            "at startup. Grants reads plus the three enforcement-write endpoints. Never "
-            "held by end users; a frontend client has no use for it."
+            "at startup. Grants reads plus standard-LDP enforcement writes: a conditional "
+            "PUT that may change only a record's delivery counters, and a POST that appends "
+            "to the access-log container. Never held by end users; a frontend client has no "
+            "use for it."
         ),
     },
     "ConsumerToken": {

@@ -24,7 +24,6 @@ from ldp_personal_store.views.model import (
     parse_view_record,
 )
 from ldp_personal_store.views.rewrite import rewrite_upstream_uris
-from ldp_personal_store.vocab import POD_viewRetrievalCount
 
 router = APIRouter(prefix="/.engine", tags=["engine"])
 
@@ -49,15 +48,17 @@ async def _load_policy(storage: StorageClient, policy_ref: str | None) -> Graph 
 async def _record_delivery(
     storage: StorageClient,
     token_uri: str,
-    token_count: int,
     view_uri: str,
-    view_graph: Graph,
     now: str,
 ) -> None:
-    """Bump both counters and append the access-log entry for a confirmed delivery."""
-    await storage.bump_token_enforcement(token_uri, token_count + 1, now)
-    current_view = int(str(view_graph.value(URIRef(view_uri), POD_viewRetrievalCount) or 0))
-    await storage.bump_view_enforcement(view_uri, current_view + 1)
+    """Bump both counters and append the access-log entry for a confirmed delivery.
+
+    Each write is a standard LDP call to storage: the counters through conditional
+    read-modify-write PUTs (which read the current value themselves), the log entry
+    through a container POST.
+    """
+    await storage.bump_token_enforcement(token_uri, now)
+    await storage.bump_view_enforcement(view_uri)
     await storage.append_access_log(view_uri, token_uri, now)
 
 
@@ -132,7 +133,7 @@ async def get_view(
     body = out_graph.serialize(format=rdflib_format_for(view.content_type_hint), encoding="utf-8")
 
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    await _record_delivery(storage, token.token_uri, token.enforcement_count, view_uri, graph, now)
+    await _record_delivery(storage, token.token_uri, view_uri, now)
 
     return Response(content=body, media_type=view.content_type_hint)
 
@@ -246,7 +247,7 @@ async def get_blob(
         raise HTTPException(status_code=404) from exc
 
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    await _record_delivery(storage, token.token_uri, token.enforcement_count, view_uri, graph, now)
+    await _record_delivery(storage, token.token_uri, view_uri, now)
 
     return StreamingResponse(
         upstream.aiter_bytes(),

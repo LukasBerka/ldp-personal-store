@@ -1,6 +1,6 @@
 """The storage dependency seam."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Protocol
 
 from rdflib import Graph
@@ -105,22 +105,21 @@ class StorageBackend(Protocol):
         """
         ...
 
-    def update_enforcement(self, uri: str, count: int, last_used_at: str) -> None:
-        """Atomically replace only the enforcement counter and last-used timestamp.
+    def replace_if_unchanged(
+        self,
+        uri: str,
+        graph: Graph,
+        expected_etag: str,
+        etag_of: Callable[[Graph], str],
+    ) -> bool:
+        """Atomically replace the .system/ record at *uri* with *graph* iff unchanged.
 
-        Overwrites pod:enforcementCount with *count* and pod:lastUsedAt with
-        *last_used_at* on the token record at *uri*, leaving every other triple
-        intact. The read-modify-write runs under a single lock acquisition so no
-        concurrent request can interleave on the same record.
-        """
-        ...
-
-    def update_view_enforcement(self, view_uri: str, count: int) -> None:
-        """Atomically overwrite only the per-view retrieval counter.
-
-        Overwrites pod:viewRetrievalCount with *count* on the view record at
-        *view_uri*, leaving every other triple intact. The read-modify-write runs
-        under a single lock acquisition so no concurrent request can interleave on
-        the same record.
+        The read-compare-write runs under a single lock acquisition, so no concurrent
+        write can interleave between the ETag check and the replacement — the primitive
+        that makes the engine's conditional ``PUT`` free of lost updates. Returns False
+        without writing when the record is absent or its current representation no longer
+        hashes to *expected_etag*; the caller surfaces that as a 412 so the client
+        re-reads and retries. *etag_of* is the HTTP layer's ETag function, injected so
+        this storage interface carries no dependency on it.
         """
         ...

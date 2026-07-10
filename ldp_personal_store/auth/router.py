@@ -16,7 +16,7 @@ from ldp_personal_store.apidocs import (
 from ldp_personal_store.auth.deps import AdminTokenDep, StorageTokenDep
 from ldp_personal_store.auth.tokens import issue_token, revoke_token
 from ldp_personal_store.config import Settings, SettingsDep
-from ldp_personal_store.ldp.content import link_header, parse_rdf_body
+from ldp_personal_store.ldp.content import etag_for_graph, link_header, parse_rdf_body
 from ldp_personal_store.ldp.deps import BackendDep, RawBodyDep, http_error
 from ldp_personal_store.policy.enforce import parse_xsd_datetime
 from ldp_personal_store.storage.backend import ResourceNotFound, StorageBackend, StorageError
@@ -304,7 +304,13 @@ def read_system(
         graph = backend.read(uri)
     except StorageError as exc:
         raise http_error(exc) from exc
-    return Response(content=graph.serialize(format="turtle"), media_type="text/turtle")
+    # The ETag lets the engine read-modify-write a record's enforcement fields with a
+    # conditional PUT (If-Match); it is the same digest the write path validates against.
+    return Response(
+        content=graph.serialize(format="turtle"),
+        media_type="text/turtle",
+        headers={"ETag": etag_for_graph(graph)},
+    )
 
 
 @router.delete(

@@ -5,7 +5,8 @@ from typing import Annotated
 
 import httpx
 from fastapi import Depends, Request
-from rdflib import Graph, URIRef
+from rdflib import Graph, Literal, URIRef
+from rdflib.namespace import XSD
 
 from ldp_personal_store.auth.deps import require_bearer
 from ldp_personal_store.auth.tokens import (
@@ -15,7 +16,20 @@ from ldp_personal_store.auth.tokens import (
     token_record_from_graph,
     unauthorized,
 )
-from ldp_personal_store.vocab import POD_AdminToken, POD_ConsumerToken
+from ldp_personal_store.vocab import (
+    POD_AdminToken,
+    POD_ConsumerToken,
+    POD_enforcementCount,
+    POD_lastUsedAt,
+    POD_viewRetrievalCount,
+)
+
+# The engine bumps a shared counter with an optimistic conditional PUT; a concurrent
+# delivery that wins the race invalidates the ETag, so a bounded retry re-reads and
+# re-applies rather than losing the update. A single record is contended by at most the
+# number of in-flight deliveries, so the cap sits comfortably above personal-scale
+# concurrency (each contender commits once, so it can displace another at most once).
+_ENFORCEMENT_MAX_RETRIES = 10
 
 
 class UpstreamError(Exception):
@@ -134,29 +148,77 @@ class StorageClient:
             raise UpstreamError(response.status_code)
         return response
 
-    async def bump_token_enforcement(self, token_uri: str, count: int, last_used_at: str) -> None:
-        response = await self._http.post(
-            self._url(token_uri) + "/enforcement",
-            json={"count": count, "last_used_at": last_used_at},
-            headers=self._headers,
+    async def _read_record_with_etag(self, uri: str) -> tuple[Graph, str]:
+        """LDP GET a state record, returning its graph and ETag for a conditional PUT."""
+        response = await self._http.get(
+            self._url(uri), headers={**self._headers, "Accept": "text/turtle"}
         )
-        self._expect(response, 204)
+        if response.status_code == 404:
+            raise UpstreamNotFound(uri)
+        self._expect(response, 200)
+        etag = response.headers.get("ETag")
+        if etag is None:
+            raise UpstreamError(response.status_code, "storage record carried no ETag")
+        graph = Graph()
+        graph.parse(data=response.text, format="turtle")
+        return graph, etag
 
-    async def bump_view_enforcement(self, view_uri: str, count: int) -> None:
-        response = await self._http.post(
-            self._url(view_uri) + "/enforcement",
-            json={"count": count},
-            headers=self._headers,
+    async def _conditional_put(self, uri: str, graph: Graph, etag: str) -> int:
+        response = await self._http.put(
+            self._url(uri),
+            content=graph.serialize(format="turtle"),
+            headers={**self._headers, "Content-Type": "text/turtle", "If-Match": etag},
         )
-        self._expect(response, 204)
+        return response.status_code
+
+    async def bump_token_enforcement(self, token_uri: str, last_used_at: str) -> None:
+        """Increment the grant's delivery counter via conditional read-modify-write PUT."""
+        subject = URIRef(token_uri)
+        for _ in range(_ENFORCEMENT_MAX_RETRIES):
+            graph, etag = await self._read_record_with_etag(token_uri)
+            count = int(str(graph.value(subject, POD_enforcementCount) or 0))
+            graph.remove((subject, POD_enforcementCount, None))
+            graph.remove((subject, POD_lastUsedAt, None))
+            graph.add((subject, POD_enforcementCount, Literal(count + 1, datatype=XSD.integer)))
+            graph.add((subject, POD_lastUsedAt, Literal(last_used_at, datatype=XSD.dateTime)))
+            status = await self._conditional_put(token_uri, graph, etag)
+            if status == 200:
+                return
+            if status != 412:
+                raise UpstreamError(status)
+        raise UpstreamError(412, "token enforcement update contended out")
+
+    async def bump_view_enforcement(self, view_uri: str) -> None:
+        """Increment the per-view retrieval counter via conditional read-modify-write PUT."""
+        subject = URIRef(view_uri)
+        for _ in range(_ENFORCEMENT_MAX_RETRIES):
+            graph, etag = await self._read_record_with_etag(view_uri)
+            count = int(str(graph.value(subject, POD_viewRetrievalCount) or 0))
+            graph.remove((subject, POD_viewRetrievalCount, None))
+            graph.add((subject, POD_viewRetrievalCount, Literal(count + 1, datatype=XSD.integer)))
+            status = await self._conditional_put(view_uri, graph, etag)
+            if status == 200:
+                return
+            if status != 412:
+                raise UpstreamError(status)
+        raise UpstreamError(412, "view enforcement update contended out")
 
     async def append_access_log(self, view_uri: str, token_uri: str, timestamp: str) -> None:
+        """Append one delivery entry by POSTing it to the access-log LDP container."""
+        body = (
+            "@prefix pod: <urn:pod:vocab:> .\n"
+            "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"
+            "<> a pod:AccessLogEntry ;\n"
+            f"   pod:accessLogView <{view_uri}> ;\n"
+            f"   pod:accessLogToken <{token_uri}> ;\n"
+            f'   pod:accessLogTimestamp "{timestamp}"^^xsd:dateTime .\n'
+        )
         response = await self._http.post(
             self._storage_base + ".system/access-log",
-            json={"view_uri": view_uri, "token_uri": token_uri, "timestamp": timestamp},
-            headers=self._headers,
+            content=body,
+            headers={**self._headers, "Content-Type": "text/turtle"},
         )
-        self._expect(response, 204)
+        self._expect(response, 201)
 
 
 async def validate_via_storage(

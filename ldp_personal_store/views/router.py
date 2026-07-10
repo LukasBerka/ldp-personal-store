@@ -4,13 +4,21 @@ import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from rdflib import URIRef
 
-from ldp_personal_store.apidocs import ADMIN_AUTH, UNAUTHORIZED, rdf_request_body, turtle_response
-from ldp_personal_store.auth.deps import get_admin_token
+from ldp_personal_store.apidocs import (
+    ADMIN_AUTH,
+    STORAGE_AUTH,
+    UNAUTHORIZED,
+    rdf_request_body,
+    turtle_response,
+)
+from ldp_personal_store.auth.deps import StorageTokenDep, get_admin_token
 from ldp_personal_store.ldp.containers import sanitize_slug
 from ldp_personal_store.ldp.content import RDF_CONTENT_TYPES, parse_rdf_body
 from ldp_personal_store.ldp.deps import BackendDep, RawBodyDep
 from ldp_personal_store.storage.backend import ResourceNotFound, StorageBackend
+from ldp_personal_store.storage.router import apply_enforcement_put, guard_enforcement_put
 from ldp_personal_store.views.model import (
     ViewSubmission,
     check_params_against_template,
@@ -18,8 +26,12 @@ from ldp_personal_store.views.model import (
     to_view_graph,
     validate_construct_template,
 )
+from ldp_personal_store.vocab import POD_EngineToken, POD_viewRetrievalCount
 
-router = APIRouter(prefix="/.system/views", tags=["views"], dependencies=[Depends(get_admin_token)])
+router = APIRouter(prefix="/.system/views", tags=["views"])
+
+# The only field the engine's conditional PUT may change on a view record.
+_VIEW_ENFORCEMENT_FIELDS: frozenset[URIRef] = frozenset({POD_viewRetrievalCount})
 
 _VIEW_BODY = rdf_request_body(
     "Exactly one subject typed `pod:View` (the subject term is irrelevant) with: "
@@ -102,6 +114,7 @@ def _store(backend: StorageBackend, view_uri: str, submission: ViewSubmission) -
 @router.post(
     "",
     status_code=201,
+    dependencies=[Depends(get_admin_token)],
     operation_id="createView",
     summary="Create a view definition",
     description=(
@@ -142,7 +155,9 @@ def create_view(
     description=(
         "Full replace (no merge) of the definition at this id, creating it when absent. "
         "The stored shape is exactly what a `GET /.system/views/{view_id}` returns, so a "
-        "GET-edit-PUT roundtrip works with any client."
+        "GET-edit-PUT roundtrip works with any client. The view engine reuses this same "
+        "conditional PUT to bump the view's `pod:viewRetrievalCount`; on its credential the "
+        "request must carry `If-Match` and change nothing but that counter."
     ),
     response_class=Response,
     responses={
@@ -150,19 +165,29 @@ def create_view(
         201: turtle_response("Created; the stored definition."),
         400: {"description": "The RDF body does not parse."},
         401: UNAUTHORIZED,
+        403: {"description": "The engine credential changed a field outside the counter."},
+        412: {"description": "`If-Match` did not match the current representation."},
         415: {"description": "`Content-Type` is not one of the four RDF media types."},
         422: _VIEW_422,
+        428: {"description": "The engine's counter bump requires an `If-Match` precondition."},
     },
-    openapi_extra={"security": ADMIN_AUTH, "requestBody": _VIEW_BODY},
+    openapi_extra={"security": STORAGE_AUTH, "requestBody": _VIEW_BODY},
 )
 def replace_view(
     view_id: str,
     request: Request,
     backend: BackendDep,
     body: RawBodyDep,
+    token: StorageTokenDep,
     content_type: Annotated[str | None, Header()] = None,
+    if_match: Annotated[str | None, Header()] = None,
+    if_none_match: Annotated[str | None, Header()] = None,
 ) -> Response:
     view_uri = str(request.app.state.system_ns) + "views/" + view_id
+    if token.token_type == str(POD_EngineToken):
+        return _bump_view_retrieval_count(
+            backend, view_uri, body, content_type, if_match, if_none_match
+        )
     submission = _submission_or_422(body, content_type, view_uri)
     try:
         backend.read(view_uri)
@@ -174,9 +199,26 @@ def replace_view(
     return response
 
 
+def _bump_view_retrieval_count(
+    backend: StorageBackend,
+    view_uri: str,
+    body: bytes,
+    content_type: str | None,
+    if_match: str | None,
+    if_none_match: str | None,
+) -> Response:
+    """The engine's conditional, counter-only replace of a view record (least privilege)."""
+    submitted = parse_rdf_body(body, content_type, base_uri=view_uri)
+    etag = guard_enforcement_put(
+        backend, view_uri, submitted, _VIEW_ENFORCEMENT_FIELDS, if_match, if_none_match
+    )
+    return apply_enforcement_put(backend, view_uri, submitted, etag)
+
+
 @router.delete(
     "/{view_id}",
     status_code=204,
+    dependencies=[Depends(get_admin_token)],
     operation_id="deleteView",
     summary="Delete a view definition",
     description=(

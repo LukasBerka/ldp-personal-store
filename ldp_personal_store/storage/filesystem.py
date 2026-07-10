@@ -2,12 +2,12 @@
 
 import re
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from rdflib import Dataset, Graph, Literal, URIRef
 from rdflib.graph import ReadOnlyGraphAggregate
-from rdflib.namespace import RDF, XSD
+from rdflib.namespace import RDF
 from rdflib.query import Result
 
 from ldp_personal_store.storage.backend import NotABinaryResource, ResourceNotFound, StorageError
@@ -16,13 +16,7 @@ from ldp_personal_store.storage.system import (
     assert_public_uri,
     ensure_system_subtree,
 )
-from ldp_personal_store.vocab import (
-    DC_format,
-    LDP_NonRDFSource,
-    POD_enforcementCount,
-    POD_lastUsedAt,
-    POD_viewRetrievalCount,
-)
+from ldp_personal_store.vocab import DC_format, LDP_NonRDFSource
 
 _IRI_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
@@ -153,27 +147,29 @@ class FilesystemBackend:
             else:
                 raise ResourceNotFound(uri)
 
-    def update_enforcement(self, uri: str, count: int, last_used_at: str) -> None:
+    def replace_if_unchanged(
+        self,
+        uri: str,
+        graph: Graph,
+        expected_etag: str,
+        etag_of: Callable[[Graph], str],
+    ) -> bool:
+        rdf_path = _guard_within_root(
+            _uri_to_rdf_path(uri, self._storage_root, self._base_uri), self._storage_root, uri
+        )
         subject = URIRef(uri)
+        # One lock hold spans the read, the ETag comparison, and the write, so a
+        # concurrent delivery bumping the same counter cannot slip in between and be lost.
         with self._lock:
-            graph = Graph()
+            if not rdf_path.exists():
+                return False
+            current = Graph()
             for triple in self._graph.graph(subject):
-                graph.add(triple)
-            graph.remove((subject, POD_enforcementCount, None))
-            graph.remove((subject, POD_lastUsedAt, None))
-            graph.add((subject, POD_enforcementCount, Literal(count, datatype=XSD.integer)))
-            graph.add((subject, POD_lastUsedAt, Literal(last_used_at, datatype=XSD.dateTime)))
+                current.add(triple)
+            if etag_of(current) != expected_etag:
+                return False
             self.write_system(uri, graph)
-
-    def update_view_enforcement(self, view_uri: str, count: int) -> None:
-        subject = URIRef(view_uri)
-        with self._lock:
-            graph = Graph()
-            for triple in self._graph.graph(subject):
-                graph.add(triple)
-            graph.remove((subject, POD_viewRetrievalCount, None))
-            graph.add((subject, POD_viewRetrievalCount, Literal(count, datatype=XSD.integer)))
-            self.write_system(view_uri, graph)
+            return True
 
     def stream_binary(self, uri: str, chunk_size: int = 65536) -> Iterator[bytes]:
         bin_path = _guard_within_root(

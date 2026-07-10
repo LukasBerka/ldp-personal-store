@@ -302,9 +302,9 @@ def health() -> HealthResponse:
 app.include_router(sparql_router)
 # The more-specific /.system/views router must precede the /.system catch-all so its
 # POST/PUT/DELETE win route resolution before the system router's GET/DELETE
-# /{path:path} handlers; the internal enforcement/log POSTs likewise mount before the
-# system router. All precede the LDP catch-all so admin-gated system paths are
-# adjudicated before the /{path:path} handlers reach a reserved resource.
+# /{path:path} handlers; the engine's state-write surface (token PUT, access-log POST)
+# likewise mounts before the system router. All precede the LDP catch-all so admin-gated
+# system paths are adjudicated before the /{path:path} handlers reach a reserved resource.
 app.include_router(views_router)
 app.include_router(storage_internal_router)
 app.include_router(system_router)
