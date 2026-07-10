@@ -13,7 +13,7 @@ arbitrary SPARQL server binds it, ours included, with no server-side cooperation
 from pyparsing.exceptions import ParseException
 from rdflib.plugins.sparql.parser import parseQuery
 
-from ldp_personal_store.views.model import ParamDecl, ParamTypeName, param_term
+from ldp_common.viewmodel import ParamDecl, ParamTypeName, param_term
 
 
 class BindingError(ValueError):

@@ -4,18 +4,10 @@ from fastapi import APIRouter, Request, Response
 from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
-from ldp_personal_store.apidocs import ADMIN_AUTH, CONSUMER_AUTH, UNAUTHORIZED, turtle_response
-from ldp_personal_store.discovery.stats import StatsResponse, compute_stats
-from ldp_personal_store.ldp.content import link_header
-from ldp_personal_store.upstream import (
-    EngineAdminDep,
-    EngineConsumerDep,
-    StorageClient,
-    StorageDep,
-    UpstreamNotFound,
-)
-from ldp_personal_store.views.model import parse_view_record
-from ldp_personal_store.vocab import (
+from ldp_common.apidocs import ADMIN_AUTH, CONSUMER_AUTH, UNAUTHORIZED, turtle_response
+from ldp_common.rdfcontent import link_header
+from ldp_common.viewmodel import parse_view_record
+from ldp_common.vocab import (
     DC_description,
     DC_title,
     LDP_BasicContainer,
@@ -27,6 +19,14 @@ from ldp_personal_store.vocab import (
     POD_paramName,
     POD_paramType,
     POD_View,
+)
+from ldp_personal_store.discovery.stats import StatsResponse, compute_stats
+from ldp_personal_store.upstream import (
+    EngineAdminDep,
+    EngineConsumerDep,
+    StorageClient,
+    StorageDep,
+    UpstreamNotFound,
 )
 
 router = APIRouter(prefix="/.engine", tags=["discovery"])

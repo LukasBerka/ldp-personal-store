@@ -6,27 +6,27 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from rdflib import URIRef
 
-from ldp_personal_store.apidocs import (
+from ldp_common.apidocs import (
     ADMIN_AUTH,
     STORAGE_AUTH,
     UNAUTHORIZED,
     rdf_request_body,
     turtle_response,
 )
+from ldp_common.rdfcontent import RDF_CONTENT_TYPES, parse_rdf_body
+from ldp_common.vocab import POD_EngineToken, POD_viewRetrievalCount
 from ldp_personal_store.auth.deps import StorageTokenDep, get_admin_token
 from ldp_personal_store.ldp.containers import sanitize_slug
-from ldp_personal_store.ldp.content import RDF_CONTENT_TYPES, parse_rdf_body
 from ldp_personal_store.ldp.deps import BackendDep, RawBodyDep
 from ldp_personal_store.storage.backend import ResourceNotFound, StorageBackend
 from ldp_personal_store.storage.router import apply_enforcement_put, guard_enforcement_put
-from ldp_personal_store.views.model import (
+from ldp_personal_store.views.submission import (
     ViewSubmission,
     check_params_against_template,
     parse_view_submission,
     to_view_graph,
     validate_construct_template,
 )
-from ldp_personal_store.vocab import POD_EngineToken, POD_viewRetrievalCount
 
 router = APIRouter(prefix="/.system/views", tags=["views"])
 

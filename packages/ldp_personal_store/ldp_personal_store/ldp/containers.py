@@ -7,7 +7,7 @@ from rdflib import Graph
 from rdflib.namespace import RDF
 from rdflib.term import URIRef
 
-from ldp_personal_store.vocab import (
+from ldp_common.vocab import (
     LDP_BasicContainer,
     LDP_Container,
     LDP_DirectContainer,

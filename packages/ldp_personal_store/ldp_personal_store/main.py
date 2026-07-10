@@ -11,11 +11,18 @@ from pydantic import BaseModel
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
+from ldp_common.apidocs import SECURITY_SCHEMES
+from ldp_common.config import check_tls_precondition, get_cors_settings, get_settings
+from ldp_common.vocab import (
+    LDP_BasicContainer,
+    LDP_RDFSource,
+    LDP_Resource,
+    make_engine_ns,
+    make_system_ns,
+)
 from ldp_personal_store import __version__
-from ldp_personal_store.apidocs import SECURITY_SCHEMES
 from ldp_personal_store.auth.router import router as system_router
-from ldp_personal_store.auth.tokens import bootstrap_admin_token, bootstrap_engine_token
-from ldp_personal_store.config import check_tls_precondition, get_cors_settings, get_settings
+from ldp_personal_store.auth.tokens_store import bootstrap_admin_token, bootstrap_engine_token
 from ldp_personal_store.discovery.router import router as discovery_router
 from ldp_personal_store.ldp.router import router as ldp_router
 from ldp_personal_store.sparql.router import router as sparql_router
@@ -25,13 +32,6 @@ from ldp_personal_store.storage.router import router as storage_internal_router
 from ldp_personal_store.upstream import StorageClient, UpstreamError
 from ldp_personal_store.views.engine import router as engine_router
 from ldp_personal_store.views.router import router as views_router
-from ldp_personal_store.vocab import (
-    LDP_BasicContainer,
-    LDP_RDFSource,
-    LDP_Resource,
-    make_engine_ns,
-    make_system_ns,
-)
 
 
 def _init_root_container(backend: StorageBackend, base_uri: str) -> None:

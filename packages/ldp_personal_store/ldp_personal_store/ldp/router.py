@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from ldp_personal_store.apidocs import (
+from ldp_common.apidocs import (
     ADMIN_AUTH,
     STORAGE_AUTH,
     UNAUTHORIZED,
@@ -15,21 +15,13 @@ from ldp_personal_store.apidocs import (
     rdf_content,
     rdf_response,
 )
-from ldp_personal_store.auth.deps import get_admin_token, get_storage_token
-from ldp_personal_store.config import SettingsDep
-from ldp_personal_store.ldp.containers import (
-    container_kind,
-    container_link_types,
-    mint_member_uri,
-    parent_container_uri,
-)
-from ldp_personal_store.ldp.content import (
+from ldp_common.config import SettingsDep
+from ldp_common.rdfcontent import (
     ACCEPT_POST,
     ALLOW_BINARY,
     ALLOW_CONTAINER,
     ALLOW_RDF,
     RDF_CONTENT_TYPES,
-    binary_content_type,
     check_preconditions,
     container_prefer,
     etag_for_binary,
@@ -40,14 +32,7 @@ from ldp_personal_store.ldp.content import (
     normalize_media_type,
     parse_rdf_body,
 )
-from ldp_personal_store.ldp.deps import BackendDep, http_error
-from ldp_personal_store.storage.backend import (
-    NotABinaryResource,
-    ResourceNotFound,
-    StorageBackend,
-    StorageError,
-)
-from ldp_personal_store.vocab import (
+from ldp_common.vocab import (
     LDP_Container,
     LDP_contains,
     LDP_hasMemberRelation,
@@ -56,6 +41,21 @@ from ldp_personal_store.vocab import (
     LDP_NonRDFSource,
     LDP_RDFSource,
     LDP_Resource,
+)
+from ldp_personal_store.auth.deps import get_admin_token, get_storage_token
+from ldp_personal_store.ldp.containers import (
+    container_kind,
+    container_link_types,
+    mint_member_uri,
+    parent_container_uri,
+)
+from ldp_personal_store.ldp.content import binary_content_type
+from ldp_personal_store.ldp.deps import BackendDep, http_error
+from ldp_personal_store.storage.backend import (
+    NotABinaryResource,
+    ResourceNotFound,
+    StorageBackend,
+    StorageError,
 )
 
 router = APIRouter(tags=["ldp"])

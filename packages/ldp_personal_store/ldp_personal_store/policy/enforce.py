@@ -5,8 +5,9 @@ from datetime import UTC, datetime
 from fastapi import HTTPException
 from rdflib import Graph, URIRef
 
-from ldp_personal_store.auth.tokens import TokenRecord
-from ldp_personal_store.vocab import (
+from ldp_common.datetime import UNIX_EPOCH, parse_xsd_datetime
+from ldp_common.tokenrecord import TokenRecord
+from ldp_common.vocab import (
     POD_expiresAt,
     POD_maxRetrievals,
     POD_maxViewRetrievals,
@@ -15,17 +16,6 @@ from ldp_personal_store.vocab import (
     POD_validUntil,
     POD_viewRetrievalCount,
 )
-
-# The lastUsedAt sentinel written at issue time. A token still parked at the epoch
-# has never had a successful delivery, so the min-interval gate does not apply yet.
-UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-
-
-def parse_xsd_datetime(value: str) -> datetime:
-    """Parse an xsd:dateTime lexical form into a tz-aware UTC datetime."""
-    normalized = f"{value[:-1]}+00:00" if value.endswith("Z") else value
-    parsed = datetime.fromisoformat(normalized)
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def check_policy(

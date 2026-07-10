@@ -9,14 +9,14 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Requ
 from pyparsing.exceptions import ParseException
 from rdflib.plugins.sparql.sparql import SPARQLError
 
-from ldp_personal_store.apidocs import STORAGE_AUTH, UNAUTHORIZED, Responses, rdf_content
-from ldp_personal_store.auth.deps import get_storage_token
-from ldp_personal_store.config import SettingsDep
-from ldp_personal_store.ldp.content import (
+from ldp_common.apidocs import STORAGE_AUTH, UNAUTHORIZED, Responses, rdf_content
+from ldp_common.config import SettingsDep
+from ldp_common.rdfcontent import (
     FORMAT_BY_CONTENT_TYPE,
     negotiate_media,
     normalize_media_type,
 )
+from ldp_personal_store.auth.deps import get_storage_token
 from ldp_personal_store.ldp.deps import BackendDep
 from ldp_personal_store.storage.backend import StorageBackend
 

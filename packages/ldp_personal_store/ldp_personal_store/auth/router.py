@@ -6,21 +6,17 @@ from fastapi import APIRouter, Header, HTTPException, Request, Response
 from rdflib import Graph, Literal, URIRef, Variable
 from rdflib.namespace import RDF, XSD
 
-from ldp_personal_store.apidocs import (
+from ldp_common.apidocs import (
     ADMIN_AUTH,
     STORAGE_AUTH,
     UNAUTHORIZED,
     rdf_request_body,
     turtle_response,
 )
-from ldp_personal_store.auth.deps import AdminTokenDep, StorageTokenDep
-from ldp_personal_store.auth.tokens import issue_token, revoke_token
-from ldp_personal_store.config import Settings, SettingsDep
-from ldp_personal_store.ldp.content import etag_for_graph, link_header, parse_rdf_body
-from ldp_personal_store.ldp.deps import BackendDep, RawBodyDep, http_error
-from ldp_personal_store.policy.enforce import parse_xsd_datetime
-from ldp_personal_store.storage.backend import ResourceNotFound, StorageBackend, StorageError
-from ldp_personal_store.vocab import (
+from ldp_common.config import Settings, SettingsDep
+from ldp_common.datetime import parse_xsd_datetime
+from ldp_common.rdfcontent import etag_for_graph, link_header, parse_rdf_body
+from ldp_common.vocab import (
     DC_title,
     LDP_BasicContainer,
     LDP_Container,
@@ -37,6 +33,10 @@ from ldp_personal_store.vocab import (
     POD_validFrom,
     POD_validUntil,
 )
+from ldp_personal_store.auth.deps import AdminTokenDep, StorageTokenDep
+from ldp_personal_store.auth.tokens_store import issue_token, revoke_token
+from ldp_personal_store.ldp.deps import BackendDep, RawBodyDep, http_error
+from ldp_personal_store.storage.backend import ResourceNotFound, StorageBackend, StorageError
 
 router = APIRouter(prefix="/.system", tags=["system"])
 

@@ -9,15 +9,15 @@ from fastapi import Depends, Request
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import XSD
 
-from ldp_personal_store.auth.deps import require_bearer
-from ldp_personal_store.auth.tokens import (
+from ldp_common.http import require_bearer
+from ldp_common.tokenrecord import (
     LOOKUP_QUERY,
     TokenRecord,
     match_token_rows,
     token_record_from_graph,
     unauthorized,
 )
-from ldp_personal_store.vocab import (
+from ldp_common.vocab import (
     POD_AdminToken,
     POD_ConsumerToken,
     POD_enforcementCount,

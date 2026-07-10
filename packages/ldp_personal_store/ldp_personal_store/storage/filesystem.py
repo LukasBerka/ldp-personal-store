@@ -10,13 +10,13 @@ from rdflib.graph import ReadOnlyGraphAggregate
 from rdflib.namespace import RDF
 from rdflib.query import Result
 
+from ldp_common.vocab import DC_format, LDP_NonRDFSource
 from ldp_personal_store.storage.backend import NotABinaryResource, ResourceNotFound, StorageError
 from ldp_personal_store.storage.system import (
     SYSTEM_SEGMENT,
     assert_public_uri,
     ensure_system_subtree,
 )
-from ldp_personal_store.vocab import DC_format, LDP_NonRDFSource
 
 _IRI_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 

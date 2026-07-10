@@ -2,17 +2,21 @@
 
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends
 
-from ldp_personal_store.auth.tokens import TokenRecord, validate_token, validate_token_one_of
+from ldp_common.http import require_bearer
+from ldp_common.tokenrecord import TokenRecord
+from ldp_common.vocab import POD_AdminToken, POD_EngineToken
+from ldp_personal_store.auth.tokens_store import validate_token, validate_token_one_of
 from ldp_personal_store.ldp.deps import BackendDep
-from ldp_personal_store.vocab import POD_AdminToken, POD_EngineToken
 
-
-def require_bearer(authorization: Annotated[str | None, Header()] = None) -> str:
-    if authorization is None or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, headers={"WWW-Authenticate": "Bearer"})
-    return authorization.removeprefix("Bearer ")
+__all__ = [
+    "AdminTokenDep",
+    "StorageTokenDep",
+    "get_admin_token",
+    "get_storage_token",
+    "require_bearer",
+]
 
 
 def get_admin_token(

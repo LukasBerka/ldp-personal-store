@@ -4,7 +4,7 @@ from rdflib import BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF, XSD
 from rdflib.term import Node
 
-from ldp_personal_store.vocab import (
+from ldp_common.vocab import (
     DC_description,
     DC_title,
     POD_constructTemplate,

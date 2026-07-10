@@ -7,9 +7,14 @@ from fastapi.responses import StreamingResponse
 from rdflib import Graph, URIRef
 from starlette.background import BackgroundTask
 
-from ldp_personal_store.apidocs import CONSUMER_AUTH, UNAUTHORIZED, rdf_response
-from ldp_personal_store.config import SettingsDep
-from ldp_personal_store.ldp.content import rdflib_format_for
+from ldp_common.apidocs import CONSUMER_AUTH, UNAUTHORIZED, rdf_response
+from ldp_common.config import SettingsDep
+from ldp_common.rdfcontent import rdflib_format_for
+from ldp_common.viewmodel import (
+    ViewRecord,
+    bind_params,
+    parse_view_record,
+)
 from ldp_personal_store.policy.enforce import check_policy
 from ldp_personal_store.upstream import (
     EngineConsumerDep,
@@ -18,11 +23,6 @@ from ldp_personal_store.upstream import (
     UpstreamNotFound,
 )
 from ldp_personal_store.views.bindings import BindingError, inject_values
-from ldp_personal_store.views.model import (
-    ViewRecord,
-    bind_params,
-    parse_view_record,
-)
 from ldp_personal_store.views.rewrite import rewrite_upstream_uris
 
 router = APIRouter(prefix="/.engine", tags=["engine"])
