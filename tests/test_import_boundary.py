@@ -1,7 +1,7 @@
 """The load-bearing guard of the package split: the view engine is a standalone product
 that speaks only the pure standard LDP + SPARQL 1.1 contract, so no ``ldp_view_engine``
 module may import ``ldp_personal_store`` (the reference storage). Only the bundled
-``ldp_pod`` composition root is allowed to depend on both.
+``ldp_personal_store.main`` composition root is allowed to depend on both.
 
 The boundary is asserted two ways: statically (every ``ldp_view_engine`` source file's
 imports are parsed and none names ``ldp_personal_store``) and dynamically (a fresh

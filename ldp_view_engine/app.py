@@ -2,8 +2,8 @@
 
 The engine holds no local storage backend; it reaches an arbitrary standard
 LDP + SPARQL 1.1 store over HTTP (``LDP_STORAGE_URL``, authenticated with
-``LDP_ENGINE_TOKEN``). The bundled single-process pod lives in ``ldp_pod`` and wires the
-same engine to an in-process storage app instead.
+``LDP_ENGINE_TOKEN``). The bundled single-process pod is ``ldp_personal_store.main``,
+which wires the same engine to an in-process storage app instead.
 """
 
 from collections.abc import AsyncGenerator
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if settings.storage_url is None:
         raise RuntimeError(
             "the engine role requires LDP_STORAGE_URL (the state store it keeps its records "
-            "in); the bundled single-process pod is ldp_pod, not this app."
+            "in); the bundled single-process pod is ldp_personal_store.main, not this app."
         )
     engine_token = settings.engine_token
     if engine_token is None:

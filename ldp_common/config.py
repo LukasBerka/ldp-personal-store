@@ -35,10 +35,10 @@ class Settings(BaseSettings):
     # "terminated" — a trusted reverse proxy terminates TLS upstream (trust the deployment)
     tls_mode: Literal["off", "required", "terminated"] = "off"
 
-    # TLS key and certificate for tls_mode="required". The canonical `python -m ldp_pod`
-    # launch path passes both to uvicorn and refuses to start without them, so a
-    # "required" pod can never silently serve plaintext; a direct uvicorn launch may
-    # supply them as --ssl-keyfile/--ssl-certfile instead.
+    # TLS key and certificate for tls_mode="required". The canonical
+    # `python -m ldp_personal_store.main` launch path passes both to uvicorn and refuses to
+    # start without them, so a "required" pod can never silently serve plaintext; a direct
+    # uvicorn launch may supply them as --ssl-keyfile/--ssl-certfile instead.
     ssl_keyfile: Path | None = None
     ssl_certfile: Path | None = None
 

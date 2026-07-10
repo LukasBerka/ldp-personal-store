@@ -27,7 +27,7 @@ never has to be activated manually.
 The recommended command starts a working pod with **zero configuration** required:
 
 ```sh
-LDP_ADMIN_TOKEN=<owner-chosen-secret> uv run python -m ldp_pod
+LDP_ADMIN_TOKEN=<owner-chosen-secret> uv run python -m ldp_personal_store.main
 ```
 
 `LDP_ADMIN_TOKEN` is the one required setting — the pod refuses to start without it, and
@@ -46,7 +46,7 @@ their own defaults, which can diverge from `LDP_HOST` and defeat the preconditio
 For an autoreloading dev server, use the explicit dev-mode alternative:
 
 ```sh
-uv run fastapi dev packages/ldp_pod/ldp_pod/main.py
+uv run fastapi dev ldp_personal_store/main.py
 ```
 
 ## Run with Docker
@@ -79,8 +79,8 @@ required — the pod refuses to start without it.**
 | `LDP_HOST` | `127.0.0.1` | Bind interface; also drives the TLS precondition below. |
 | `LDP_PORT` | `8000` | Bind port. |
 | `LDP_TLS_MODE` | `off` | `off` \| `required` \| `terminated` (see below). |
-| `LDP_SSL_KEYFILE` | unset | TLS private key for `tls_mode=required`; forwarded to uvicorn by `python -m ldp_pod`. |
-| `LDP_SSL_CERTFILE` | unset | TLS certificate for `tls_mode=required`; forwarded to uvicorn by `python -m ldp_pod`. |
+| `LDP_SSL_KEYFILE` | unset | TLS private key for `tls_mode=required`; forwarded to uvicorn by `python -m ldp_personal_store.main`. |
+| `LDP_SSL_CERTFILE` | unset | TLS certificate for `tls_mode=required`; forwarded to uvicorn by `python -m ldp_personal_store.main`. |
 | `LDP_ADMIN_TOKEN` | **required** | The pod owner's plaintext admin credential. The pod refuses to start without it; only its SHA-256 hash is persisted and the plaintext is never logged. Choose a long random value (e.g. `openssl rand -base64 32`). |
 | `LDP_RELOAD` | `false` | Dev-only autoreload file-watcher. |
 | `LDP_CORS_ALLOW_ORIGINS` | `*` | Comma-separated browser origins allowed to read the pod cross-origin (CORS), or `*` for any. `*` is a safe default here because auth is a bearer token in the `Authorization` header, never a cookie — see below. |
@@ -88,13 +88,13 @@ required — the pod refuses to start without it.**
 **TLS precondition.** For any non-loopback `host`, `tls_mode` must be `required`
 (uvicorn-native TLS) or `terminated` (TLS ended at a trusted reverse proxy upstream),
 otherwise boot is refused rather than serving plaintext on a public interface. With
-`tls_mode=required`, the `python -m ldp_pod` path hands `LDP_SSL_KEYFILE` /
+`tls_mode=required`, the `python -m ldp_personal_store.main` path hands `LDP_SSL_KEYFILE` /
 `LDP_SSL_CERTFILE` to uvicorn and refuses to start when either is missing:
 
 ```sh
 LDP_HOST=0.0.0.0 LDP_TLS_MODE=required \
   LDP_SSL_KEYFILE=key.pem LDP_SSL_CERTFILE=cert.pem \
-  uv run python -m ldp_pod
+  uv run python -m ldp_personal_store.main
 ```
 
 A direct uvicorn launch may pass `--ssl-keyfile`/`--ssl-certfile` instead; in that

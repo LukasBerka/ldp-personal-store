@@ -1,10 +1,11 @@
 """The bundled Personal LDP Pod: the view engine and reference storage in one process.
 
-This composition root mounts both products' routers on a single FastAPI app and wires the
+This composition root mounts both surfaces' routers on a single FastAPI app and wires the
 engine's storage client to that same app over an in-process ASGI transport — the identical
-HTTP surface a split deployment reaches over the network. It keeps ``ldp_view_engine`` and
-``ldp_personal_store`` independent (neither imports the other); only this package depends on
-both. The canonical zero-config run command is ``LDP_ADMIN_TOKEN=… uv run python -m ldp_pod``.
+HTTP surface a split deployment reaches over the network. The view-engine product stays
+independent (``ldp_view_engine`` never imports ``ldp_personal_store``); this module is the
+one place that depends on both. The canonical zero-config run command is
+``LDP_ADMIN_TOKEN=… uv run python -m ldp_personal_store.main``.
 """
 
 from collections.abc import AsyncGenerator
@@ -22,15 +23,15 @@ from ldp_common.config import (
     require_admin_token,
 )
 from ldp_common.vocab import make_engine_ns, make_system_ns
-from ldp_personal_store.app import init_root_container
+from ldp_personal_store import __version__
 from ldp_personal_store.auth.router import router as system_router
 from ldp_personal_store.auth.tokens_store import bootstrap_admin_token, bootstrap_engine_token
+from ldp_personal_store.bootstrap import init_root_container
 from ldp_personal_store.ldp.router import router as ldp_router
 from ldp_personal_store.sparql.router import router as sparql_router
 from ldp_personal_store.storage.filesystem import FilesystemBackend
 from ldp_personal_store.storage.router import router as storage_internal_router
 from ldp_personal_store.views.router import router as views_router
-from ldp_pod import __version__
 from ldp_view_engine.client import StorageClient, UpstreamError
 from ldp_view_engine.discovery import router as discovery_router
 from ldp_view_engine.engine import router as engine_router
@@ -237,7 +238,7 @@ app.include_router(ldp_router)
 
 
 def run() -> None:
-    run_uvicorn("ldp_pod.main:app", get_settings())
+    run_uvicorn("ldp_personal_store.main:app", get_settings())
 
 
 if __name__ == "__main__":
