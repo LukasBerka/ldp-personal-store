@@ -80,6 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         token=engine_plaintext,
         base_uri=settings.base_uri,
         storage_url=settings.storage_url,
+        state_graph=settings.state_graph,
     )
     try:
         yield

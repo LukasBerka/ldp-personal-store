@@ -1,5 +1,6 @@
 """SPARQL 1.1 Protocol read-only query endpoint over the in-memory graph."""
 
+import re
 import urllib.parse
 from collections.abc import Mapping
 from typing import Annotated
@@ -10,6 +11,7 @@ from rdflib.plugins.sparql.sparql import SPARQLError
 
 from ldp_personal_store.apidocs import STORAGE_AUTH, UNAUTHORIZED, Responses, rdf_content
 from ldp_personal_store.auth.deps import get_storage_token
+from ldp_personal_store.config import SettingsDep
 from ldp_personal_store.ldp.content import (
     FORMAT_BY_CONTENT_TYPE,
     negotiate_media,
@@ -96,6 +98,21 @@ def _extract_include_system(params: Mapping[str, str]) -> bool:
     return params.get(_INCLUDE_SYSTEM_PARAM) == "true"
 
 
+def _apply_state_scope(sparql: str, state_graph: str) -> tuple[str, bool]:
+    """Resolve a standard ``FROM <state-graph>`` dataset clause to full-dataset scope.
+
+    The portable equivalent of the ``include-system`` extension: the engine names the
+    reserved state graph in a standard SPARQL ``FROM`` instead of setting a proprietary
+    flag. When present, the clause is stripped (this store realizes the state graph as its
+    ``.system/`` subtree rather than a literal named graph) and evaluation widens to
+    include those records.
+    """
+    pattern = re.compile(r"\bFROM\s+(?:NAMED\s+)?<" + re.escape(state_graph) + r">", re.IGNORECASE)
+    if pattern.search(sparql):
+        return pattern.sub(" ", sparql), True
+    return sparql, False
+
+
 def _decode_utf8(body: bytes) -> str:
     try:
         return body.decode("utf-8")
@@ -110,7 +127,11 @@ def _run_query(
     init_bindings: dict[str, str] | None = None,
     include_system: bool = False,
     init_binding_types: dict[str, str] | None = None,
+    state_graph: str | None = None,
 ) -> Response:
+    if state_graph is not None:
+        sparql, from_state = _apply_state_scope(sparql, state_graph)
+        include_system = include_system or from_state
     if not sparql or not sparql.strip():
         raise HTTPException(status_code=400, detail="Missing query")
     # rdflib parses eagerly but evaluates lazily, so a ParseException surfaces at
@@ -154,6 +175,7 @@ def _run_query(
 def query_get(
     request: Request,
     backend: BackendDep,
+    settings: SettingsDep,
     query: Annotated[
         str | None,
         Query(description="The SPARQL query text (required; its absence is a 400)."),
@@ -167,6 +189,7 @@ def query_get(
         init_bindings=_extract_bindings(request.query_params),
         include_system=_extract_include_system(request.query_params),
         init_binding_types=_extract_binding_types(request.query_params),
+        state_graph=settings.state_graph,
     )
 
 
@@ -211,6 +234,7 @@ def query_get(
 def query_post(
     request: Request,
     backend: BackendDep,
+    settings: SettingsDep,
     body: Annotated[bytes, Body()],
     content_type: Annotated[str | None, Header()] = None,
     accept: Annotated[str | None, Header()] = None,
@@ -244,4 +268,5 @@ def query_post(
         init_bindings=bindings,
         include_system=include_system,
         init_binding_types=binding_types,
+        state_graph=settings.state_graph,
     )

@@ -6,15 +6,11 @@ from rdflib import Graph, URIRef
 from rdflib.term import Node
 
 from ldp_personal_store.upstream import StorageClient
-from ldp_personal_store.vocab import make_system_ns
 
-_RESOURCE_URIS_QUERY = (
-    "SELECT DISTINCT ?r WHERE {"
-    "  { GRAPH ?r { ?s ?p ?o } }"
-    "  UNION"
-    "  { ?r a <http://www.w3.org/ns/ldp#NonRDFSource> }"
-    "}"
-)
+# Every stored resource — RDF documents and the metadata sidecar of each binary — is a
+# subject in the data scope, so a plain distinct-subjects query lists them without the
+# non-portable GRAPH-per-resource trick or reaching into engine state.
+_RESOURCE_URIS_QUERY = "SELECT DISTINCT ?r WHERE { ?r ?p ?o }"
 
 
 async def rewrite_upstream_uris(
@@ -34,12 +30,7 @@ async def rewrite_upstream_uris(
     if not candidates:
         return graph
 
-    system_prefix = str(make_system_ns(base_uri))
-    existing = {
-        row["r"]
-        for row in await storage.select(_RESOURCE_URIS_QUERY, include_system=True)
-        if "r" in row and not row["r"].startswith(system_prefix)
-    }
+    existing = {row["r"] for row in await storage.select(_RESOURCE_URIS_QUERY) if "r" in row}
     mapping: dict[URIRef, URIRef] = {}
     for uri in candidates:
         if str(uri) in existing:

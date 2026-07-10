@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     # engine against a storage server listening elsewhere (loopback or remote).
     storage_url: str | None = None
 
+    # The named graph that holds the engine's operating state (token/view/policy records
+    # and the access log), kept out of view-CONSTRUCT scope. The engine names it in a
+    # standard SPARQL FROM clause to reach that state on any store; this reference server
+    # realizes it locally as its reserved `.system/` subtree. Not derived from base_uri —
+    # it is a stable logical name the engine and store agree on.
+    state_graph: str = "urn:ldp:engine-state"
+
     @field_validator("base_uri")
     @classmethod
     def _ensure_trailing_slash(cls, v: str) -> str:

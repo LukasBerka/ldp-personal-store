@@ -124,7 +124,13 @@ def parse_view_submission(graph: Graph) -> ViewSubmission:
 
 
 def validate_construct_template(template: str) -> None:
-    """Raise ValueError unless *template* is syntactically valid SPARQL CONSTRUCT."""
+    """Raise ValueError unless *template* is syntactically valid SPARQL CONSTRUCT.
+
+    A view template may not carry a ``FROM`` / ``FROM NAMED`` dataset clause: view queries
+    always run in the engine-controlled data scope, and a dataset clause naming the engine
+    state graph would otherwise let a view read token hashes and policies. Scope is the
+    engine's to set, never the template author's.
+    """
     try:
         parsed = parseQuery(template)
     except ParseException as exc:
@@ -133,6 +139,8 @@ def validate_construct_template(template: str) -> None:
     query_type = getattr(parsed[1], "name", None)
     if query_type != "ConstructQuery":
         raise ValueError(f"Template must be a CONSTRUCT query, got {query_type!r}")
+    if getattr(parsed[1], "datasetClause", None):
+        raise ValueError("Template must not carry a FROM / FROM NAMED dataset clause")
 
 
 def check_params_against_template(template: str, decls: list[ParamDecl]) -> None:

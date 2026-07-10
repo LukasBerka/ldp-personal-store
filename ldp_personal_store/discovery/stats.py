@@ -43,12 +43,12 @@ class StatsResponse(BaseModel):
 async def compute_stats(storage: StorageClient) -> StatsResponse:
     """Aggregate the access log into a total plus per-view and per-consumer breakdowns."""
     total = 0
-    for row in await storage.select(_TOTAL_SPARQL, include_system=True):
+    for row in await storage.select(storage.state_scoped(_TOTAL_SPARQL)):
         if "total" in row:
             total = int(row["total"])
 
     by_view: list[ViewCount] = []
-    for row in await storage.select(_BY_VIEW_SPARQL, include_system=True):
+    for row in await storage.select(storage.state_scoped(_BY_VIEW_SPARQL)):
         if "view" not in row or "count" not in row:
             continue
         by_view.append(
@@ -60,7 +60,7 @@ async def compute_stats(storage: StorageClient) -> StatsResponse:
         )
 
     by_token: list[TokenCount] = []
-    for row in await storage.select(_BY_TOKEN_SPARQL, include_system=True):
+    for row in await storage.select(storage.state_scoped(_BY_TOKEN_SPARQL)):
         if "token" not in row or "count" not in row:
             continue
         by_token.append(TokenCount(token_uri=row["token"], count=int(row["count"])))

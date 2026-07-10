@@ -1,6 +1,7 @@
 """The engine->storage HTTP boundary: client, credential, and consumer validation."""
 
 import hashlib
+import re
 from typing import Annotated
 
 import httpx
@@ -54,6 +55,7 @@ class StorageClient:
         token: str,
         base_uri: str,
         storage_url: str | None = None,
+        state_graph: str = "urn:ldp:engine-state",
     ) -> None:
         self._http = http
         self._headers = {"Authorization": f"Bearer {token}"}
@@ -61,11 +63,25 @@ class StorageClient:
         self._storage_base = storage_url if storage_url is not None else base_uri
         if not self._storage_base.endswith("/"):
             self._storage_base += "/"
+        self._state_graph = state_graph
 
     def _url(self, uri: str) -> str:
         # Resource URIs are minted under base_uri; a split deployment rebases them
         # onto the storage server's listening URL.
         return self._storage_base + uri.removeprefix(self._base_uri)
+
+    def state_scoped(self, sparql: str) -> str:
+        """Prefix a query's WHERE with a standard ``FROM`` naming the engine state graph.
+
+        This is how the engine reaches its own state (token/view/policy records, the
+        access log) without a proprietary scope flag: an arbitrary store resolves the
+        ``FROM`` to that graph, and this reference server maps it onto its ``.system/``
+        subtree. Queries without it evaluate over the data only, so view CONSTRUCTs can
+        never see engine state.
+        """
+        return re.sub(
+            r"\bWHERE\b", f"FROM <{self._state_graph}> WHERE", sparql, count=1, flags=re.IGNORECASE
+        )
 
     @staticmethod
     def _expect(response: httpx.Response, status_code: int) -> None:
@@ -83,57 +99,29 @@ class StorageClient:
         graph.parse(data=response.text, format="turtle")
         return graph
 
-    async def _query(
-        self,
-        sparql: str,
-        bindings: dict[str, str] | None,
-        accept: str,
-        include_system: bool,
-        binding_types: dict[str, str] | None = None,
-    ):
-        # Parameter values travel as binding-<name> protocol extension fields and are
-        # bound server-side via initBindings — never spliced into the query text. A
-        # companion bindingtype-<name> field carries the XSD datatype for typed
-        # (date/dateTime) parameters so they bind as typed terms, not plain literals.
-        data = {"query": sparql}
-        if bindings:
-            data.update({f"binding-{name}": value for name, value in bindings.items()})
-        if binding_types:
-            data.update({f"bindingtype-{name}": dt for name, dt in binding_types.items()})
-        # Queries evaluate over the pod's public data by default; the .system/
-        # records stay out of scope unless the caller opts in explicitly.
-        if include_system:
-            data["include-system"] = "true"
+    async def _post_query(self, sparql: str, accept: str) -> httpx.Response:
+        """POST a bare SPARQL 1.1 query — no protocol extensions on the engine's path.
+
+        Parameters are already baked into the query text as an injected ``VALUES`` block,
+        and scope is expressed with a standard ``FROM``, so the request needs neither the
+        ``binding-*`` nor the ``include-system`` extension an arbitrary store would ignore.
+        """
         response = await self._http.post(
             self._storage_base + "sparql",
-            data=data,
-            headers={**self._headers, "Accept": accept},
+            content=sparql,
+            headers={**self._headers, "Content-Type": "application/sparql-query", "Accept": accept},
         )
         self._expect(response, 200)
         return response
 
-    async def construct(
-        self,
-        sparql: str,
-        bindings: dict[str, str] | None = None,
-        include_system: bool = False,
-        binding_types: dict[str, str] | None = None,
-    ) -> Graph:
-        response = await self._query(sparql, bindings, "text/turtle", include_system, binding_types)
+    async def construct(self, sparql: str) -> Graph:
+        response = await self._post_query(sparql, "text/turtle")
         graph = Graph()
         graph.parse(data=response.text, format="turtle")
         return graph
 
-    async def select(
-        self,
-        sparql: str,
-        bindings: dict[str, str] | None = None,
-        include_system: bool = False,
-        binding_types: dict[str, str] | None = None,
-    ) -> list[dict[str, str]]:
-        response = await self._query(
-            sparql, bindings, "application/sparql-results+json", include_system, binding_types
-        )
+    async def select(self, sparql: str) -> list[dict[str, str]]:
+        response = await self._post_query(sparql, "application/sparql-results+json")
         rows = response.json()["results"]["bindings"]
         return [{name: cell["value"] for name, cell in row.items()} for row in rows]
 
@@ -235,9 +223,13 @@ async def validate_via_storage(
     helpers, so the two validators cannot drift.
     """
     presented_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    rows = await storage.select(
-        LOOKUP_QUERY, bindings={"presented": presented_hash}, include_system=True
+    # The digest binds through a standard VALUES block (a SHA-256 hex string, so free of
+    # any character that could escape the literal) and the lookup is scoped to the state
+    # graph — no binding-* or include-system extension on the wire.
+    bound_lookup = LOOKUP_QUERY.replace(
+        "WHERE {", f'WHERE {{ VALUES (?presented) {{ ("{presented_hash}") }}', 1
     )
+    rows = await storage.select(storage.state_scoped(bound_lookup))
     token_uri, matched_type = match_token_rows(rows, presented_hash, (required_type,))
     try:
         record = await storage.read_graph(token_uri)
