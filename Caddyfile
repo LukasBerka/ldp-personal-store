@@ -1,0 +1,19 @@
+# Reverse proxy for the split deployment (docker compose --profile split).
+# One canonical base on :8000 fans out to the two role services: the consumer surface
+# (/.engine/*) goes to the view engine, everything else — the LDP data plane, /sparql, and
+# the owner's /.system/* administration tree — goes to the storage server. This is why both
+# services share LDP_BASE_URI=http://localhost:8000/: the URIs storage mints and the proxy
+# URLs the engine emits all resolve here.
+{
+	auto_https off
+	admin off
+}
+
+:8000 {
+	handle /.engine/* {
+		reverse_proxy engine:8001
+	}
+	handle {
+		reverse_proxy storage:8000
+	}
+}

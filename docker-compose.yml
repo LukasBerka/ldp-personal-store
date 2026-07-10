@@ -1,4 +1,6 @@
 services:
+  # Default: the bundled single-process pod (view engine + storage in one container).
+  #   LDP_ADMIN_TOKEN=<secret> docker compose up --build
   pod:
     build: .
     ports:
@@ -19,5 +21,76 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  # Split deployment (docker compose --profile split up --build): the view engine and the
+  # storage server run as separate processes, talking only over the standard LDP + SPARQL
+  # 1.1 contract. A reverse proxy publishes one canonical base (LDP_BASE_URI) and routes
+  # the consumer surface (/.engine/*) to the engine and everything else to storage — so the
+  # record URIs the storage server mints and the proxy URLs the engine emits share one base.
+  #   LDP_ADMIN_TOKEN=<secret> LDP_ENGINE_TOKEN=<secret> \
+  #     docker compose --profile split up --build
+  proxy:
+    image: caddy:2-alpine
+    profiles: [split]
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      storage:
+        condition: service_healthy
+      engine:
+        condition: service_healthy
+    restart: unless-stopped
+
+  storage:
+    build: .
+    profiles: [split]
+    command: ["python", "-m", "ldp_personal_store.app"]
+    environment:
+      # The canonical public base is the proxy's; the storage server mints its records
+      # under it even though it listens internally as service "storage".
+      LDP_BASE_URI: "http://localhost:8000/"
+      LDP_ADMIN_TOKEN: ${LDP_ADMIN_TOKEN:?set LDP_ADMIN_TOKEN before starting the split}
+      # Seed the engine's storage credential so the separately-deployed engine can auth.
+      LDP_ENGINE_TOKEN: ${LDP_ENGINE_TOKEN:?set LDP_ENGINE_TOKEN so the engine can authenticate}
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+    restart: unless-stopped
+
+  engine:
+    build: .
+    profiles: [split]
+    command: ["python", "-m", "ldp_view_engine.app"]
+    environment:
+      LDP_BASE_URI: "http://localhost:8000/"
+      LDP_PORT: "8001"
+      # Reach the storage server (state store + co-located data source) over the network,
+      # exactly as it would an arbitrary third-party LDP + SPARQL store.
+      LDP_STORAGE_URL: "http://storage:8000/"
+      LDP_ENGINE_TOKEN: ${LDP_ENGINE_TOKEN:?set LDP_ENGINE_TOKEN so the engine can authenticate}
+    depends_on:
+      storage:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+    restart: unless-stopped
+
 volumes:
   pod-data:
+  storage-data:
