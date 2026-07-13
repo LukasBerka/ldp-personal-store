@@ -1,5 +1,4 @@
-"""Shared FastAPI assembly for the pod's role-specific apps.
-"""
+"""Shared FastAPI assembly for the pod's role-specific apps."""
 
 from typing import Literal
 

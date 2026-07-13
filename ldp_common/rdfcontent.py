@@ -1,5 +1,4 @@
-"""Content negotiation, serialization, ETag, and header helpers for RDF over HTTP.
-"""
+"""Content negotiation, serialization, ETag, and header helpers for RDF over HTTP."""
 
 import hashlib
 import re

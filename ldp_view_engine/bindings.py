@@ -1,5 +1,4 @@
-"""Portable, injection-safe parameter binding for view CONSTRUCT templates.
-"""
+"""Portable, injection-safe parameter binding for view CONSTRUCT templates."""
 
 from pyparsing.exceptions import ParseException
 from rdflib.plugins.sparql.parser import parseQuery
@@ -91,8 +90,7 @@ def _values_block(bound: dict[str, str], decls: list[ParamDecl]) -> str:
 
 
 def inject_values(template: str, bound: dict[str, str], decls: list[ParamDecl]) -> str:
-    """Return *template* rewritten to bind *bound* via an injected ``VALUES`` block.
-    """
+    """Return *template* rewritten to bind *bound* via an injected ``VALUES`` block."""
     if not bound:
         return template
 

@@ -1,5 +1,4 @@
-"""Engine-role FastAPI app: the view engine as its own process against a remote store.
-"""
+"""Engine-role FastAPI app: the view engine as its own process against a remote store."""
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager

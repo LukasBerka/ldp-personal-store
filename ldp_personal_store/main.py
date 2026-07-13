@@ -1,5 +1,4 @@
-"""The bundled LDP Personal Store: the view engine and reference storage in one process.
-"""
+"""The bundled LDP Personal Store: the view engine and reference storage in one process."""
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager

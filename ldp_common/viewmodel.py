@@ -34,8 +34,7 @@ _TERM_IRI_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 
 def param_term(value: str, param_type: ParamTypeName) -> URIRef | RDFLiteral:
-    """The rdflib term a validated parameter *value* of *param_type* binds as.
-    """
+    """The rdflib term a validated parameter *value* of *param_type* binds as."""
     datatype = _PARAM_DATATYPE.get(param_type)
     if datatype is not None:
         return RDFLiteral(value, datatype=datatype)

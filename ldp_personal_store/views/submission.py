@@ -99,8 +99,7 @@ def validate_construct_template(template: str) -> None:
 
 
 def check_params_against_template(template: str, decls: list[ParamDecl]) -> None:
-    """Raise ValueError unless every declared parameter can be bound into *template*.
-    """
+    """Raise ValueError unless every declared parameter can be bound into *template*."""
     if decls and "template" not in parseQuery(template)[1]:
         raise ValueError(
             "A parameterized view must use the explicit CONSTRUCT { ... } WHERE { ... } "
