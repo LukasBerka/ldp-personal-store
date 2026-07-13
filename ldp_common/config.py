@@ -47,9 +47,9 @@ class Settings(BaseSettings):
     admin_token: str | None = None
 
     # Optional PLAINTEXT engine token: the credential the view engine presents on the
-    # engine->storage boundary. Left unset, the bundled deployment issues a fresh engine token on every startup.
-    # set it explicitly when the engine runs as a
-    # separate process against a remote storage server.
+    # engine->storage boundary. Left unset, the bundled deployment issues a fresh engine
+    # token on every startup. Set it explicitly when the engine runs as a separate process
+    # against a remote storage server.
     engine_token: str | None = None
 
     # Base URL of the upstream storage server holding the engine's own state records. Set it
