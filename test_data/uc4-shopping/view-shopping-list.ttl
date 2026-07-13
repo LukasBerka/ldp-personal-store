@@ -1,4 +1,4 @@
-@prefix pod:     <urn:pod:vocab:> .
+@prefix pod:     <https://lukasberka.github.io/ldp-personal-store/vocab#> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 
 # UC4: household list consulted throughout the week by both partners under one

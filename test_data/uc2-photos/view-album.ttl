@@ -1,4 +1,4 @@
-@prefix pod:     <urn:pod:vocab:> .
+@prefix pod:     <https://lukasberka.github.io/ldp-personal-store/vocab#> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 
 # UC2: read access to one album for a family member. The photo URIs in the

@@ -74,7 +74,7 @@ mint_token() {
   local prefix="$1"; shift
   local triples="" v
   for v in "$@"; do
-    triples+="<> <urn:pod:vocab:linkedView> <$BASE/.system/views/$v> . "
+    triples+="<> <https://lukasberka.github.io/ldp-personal-store/vocab#linkedView> <$BASE/.system/views/$v> . "
   done
   local hdr; hdr="$(mktemp)"
   local resp

@@ -1,10 +1,10 @@
-@prefix pod:     <urn:pod:vocab:> .
+@prefix pod:     <https://lukasberka.github.io/ldp-personal-store/vocab#> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 
 # UC1 with FR3 parameters narrowing the output to a date window, e.g. the
 # "next two weeks" of the scenario: from=2026-07-05 & to=2026-07-19.
 # STR() coercion is required because query parameters are bound as plain
-# literals (see the integer-binding caveat in app/views/model.py).
+# literals (see the integer-binding caveat in ldp_common/viewmodel.py).
 <> a pod:View ;
    dcterms:title "Schedule for a date window" ;
    dcterms:description "Event titles and dates from one calendar, limited to an inclusive from/to date window (ISO dates, e.g. 2026-07-05)." ;

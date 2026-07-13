@@ -1,7 +1,7 @@
 # UC5 review-group grant: a fixed review period (time window), a retrieval
 # budget, and a minimum gap between consecutive retrievals.
-<> a <urn:pod:vocab:Policy> ;
-  <urn:pod:vocab:validFrom>     "2026-07-05T00:00:00Z" ;
-  <urn:pod:vocab:validUntil>    "2026-08-15T23:59:59Z" ;
-  <urn:pod:vocab:maxRetrievals> 200 ;
-  <urn:pod:vocab:minInterval>   5 .
+<> a <https://lukasberka.github.io/ldp-personal-store/vocab#Policy> ;
+  <https://lukasberka.github.io/ldp-personal-store/vocab#validFrom>     "2026-07-05T00:00:00Z" ;
+  <https://lukasberka.github.io/ldp-personal-store/vocab#validUntil>    "2026-08-15T23:59:59Z" ;
+  <https://lukasberka.github.io/ldp-personal-store/vocab#maxRetrievals> 200 ;
+  <https://lukasberka.github.io/ldp-personal-store/vocab#minInterval>   5 .

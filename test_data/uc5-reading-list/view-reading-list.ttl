@@ -1,4 +1,4 @@
-@prefix pod:     <urn:pod:vocab:> .
+@prefix pod:     <https://lukasberka.github.io/ldp-personal-store/vocab#> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 
 # UC5: curated reading list published to a small group for a fixed review

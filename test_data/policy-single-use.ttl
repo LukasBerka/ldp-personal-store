@@ -1,5 +1,5 @@
 # Single-use demo grant: exercises the per-grant retrieval ceiling at its
 # smallest budget. The first retrieval succeeds; the second is refused with
 # 403 "policy: max retrievals reached".
-<> a <urn:pod:vocab:Policy> ;
-  <urn:pod:vocab:maxRetrievals> 1 .
+<> a <https://lukasberka.github.io/ldp-personal-store/vocab#Policy> ;
+  <https://lukasberka.github.io/ldp-personal-store/vocab#maxRetrievals> 1 .

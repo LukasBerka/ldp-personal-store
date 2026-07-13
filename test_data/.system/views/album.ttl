@@ -1,5 +1,5 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
-@prefix ns1: <urn:pod:vocab:> .
+@prefix ns1: <https://lukasberka.github.io/ldp-personal-store/vocab#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 <http://localhost:8000/.system/views/album> a ns1:View ;
