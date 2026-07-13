@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LDP Pod · Test Console</title>
+  <link rel="stylesheet" href="styles.css?v=2">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">◆</span>
+    <span class="brand-name">LDP&nbsp;Pod <span class="brand-sub">Test&nbsp;Console</span></span>
+  </div>
+
+  <div class="conn">
+    <label class="field base">
+      <span>Base URL</span>
+      <input id="baseUrl" type="url" spellcheck="false" autocomplete="off" placeholder="http://localhost:8000">
+    </label>
+    <button id="btnHealth" class="btn" title="GET /health">Check</button>
+    <span id="healthPill" class="pill neutral" role="status">not checked</span>
+  </div>
+
+  <div class="topbar-spacer"></div>
+
+  <div class="rolebar">
+    <div class="segmented" role="tablist" aria-label="Role">
+      <button id="roleOwner" data-role="owner" class="active" role="tab" aria-selected="true">Owner</button>
+      <button id="roleConsumer" data-role="consumer" role="tab" aria-selected="false">Consumer</button>
+    </div>
+  </div>
+
+  <button id="btnLog" class="btn ghost" title="Show request log">
+    Log <span id="logCount" class="badge">0</span>
+  </button>
+</header>
+
+<section class="creds">
+  <label class="field" data-role-show="owner">
+    <span>Admin token <em class="tag owner">owner</em></span>
+    <span class="input-clear">
+      <input id="adminToken" type="password" spellcheck="false" autocomplete="off" placeholder="LDP_ADMIN_TOKEN">
+      <button class="mini" data-clear="adminToken" title="Forget">✕</button>
+      <button class="mini" data-reveal="adminToken" title="Show/hide">👁</button>
+    </span>
+  </label>
+  <label class="field" data-role-show="consumer">
+    <span>Consumer token <em class="tag consumer">consumer</em></span>
+    <span class="input-clear">
+      <input id="consumerToken" type="password" spellcheck="false" autocomplete="off" placeholder="grant token from the owner">
+      <button class="mini" data-clear="consumerToken" title="Forget">✕</button>
+      <button class="mini" data-reveal="consumerToken" title="Show/hide">👁</button>
+    </span>
+  </label>
+  <p class="creds-hint" data-role-show="owner">You are the pod owner: define data, views, grants and policies. Every request uses the admin token.</p>
+  <p class="creds-hint" data-role-show="consumer">You are a data consumer: discover the views your grant unlocks and read through the engine surface only.</p>
+</section>
+
+<!-- ============================= OWNER TABS ============================= -->
+<nav class="tabs" id="ownerTabs" data-role-show="owner" aria-label="Owner sections">
+  <button class="tab active" data-tab="data">Data</button>
+  <button class="tab" data-tab="views">Views</button>
+  <button class="tab" data-tab="grants">Grants</button>
+  <button class="tab" data-tab="policies">Policies</button>
+  <button class="tab" data-tab="sparql">SPARQL</button>
+  <button class="tab" data-tab="stats">Stats</button>
+</nav>
+
+<!-- ============================= CONSUMER TABS ============================= -->
+<nav class="tabs" id="consumerTabs" data-role-show="consumer" aria-label="Consumer sections" hidden>
+  <button class="tab active" data-tab="discover">Discover &amp; read</button>
+  <button class="tab" data-tab="manual">Manual</button>
+</nav>
+
+<main id="panels">
+
+  <!-- ---------- OWNER · DATA ---------- -->
+  <section class="panel active" data-panel="data" data-role-show="owner">
+    <div class="grid">
+      <div class="card">
+        <h2>Browse the pod</h2>
+        <p class="muted">Dereference any path in the data plane. Container members are clickable. The current <code>ETag</code> is captured for edits.</p>
+        <div class="row">
+          <input id="dataPath" class="grow" spellcheck="false" placeholder="path, e.g. notes/  (empty = pod root)">
+          <button id="btnBrowseUp" class="btn ghost" title="Parent container">↑ Up</button>
+          <button id="btnBrowse" class="btn primary">Open</button>
+        </div>
+        <div id="browseOut" class="out"></div>
+      </div>
+
+      <div class="card">
+        <h2>Create / replace / upload</h2>
+        <div class="row">
+          <label class="field grow"><span>Target path</span>
+            <input id="writePath" spellcheck="false" placeholder="notes/hello  or  notes/  (for POST)"></label>
+          <label class="field"><span>Method</span>
+            <select id="writeMethod">
+              <option value="PUT">PUT (exact path)</option>
+              <option value="POST">POST (into container)</option>
+            </select></label>
+        </div>
+        <div class="row">
+          <label class="field grow"><span>Content type</span>
+            <select id="writeCtype">
+              <option value="text/turtle">text/turtle</option>
+              <option value="application/ld+json">application/ld+json</option>
+              <option value="application/n-triples">application/n-triples</option>
+              <option value="application/rdf+xml">application/rdf+xml</option>
+              <option value="__binary">Binary — upload a file…</option>
+            </select></label>
+          <label class="field" id="slugField"><span>Slug (POST)</span>
+            <input id="writeSlug" spellcheck="false" placeholder="optional id"></label>
+        </div>
+        <div id="rdfBodyWrap">
+          <label class="field"><span>RDF body</span>
+            <textarea id="writeBody" rows="8" spellcheck="false" class="mono">@prefix dcterms: &lt;http://purl.org/dc/terms/&gt; .
+
+&lt;&gt; dcterms:title "Meeting notes" ;
+   dcterms:description "Notes from the sync" .</textarea></label>
+        </div>
+        <div id="binBodyWrap" hidden>
+          <label class="field"><span>File</span><input id="writeFile" type="file"></label>
+          <label class="field"><span>Override content type</span>
+            <input id="writeBinCtype" spellcheck="false" placeholder="(defaults to the file's type)"></label>
+        </div>
+        <div class="row wrap">
+          <label class="check"><input type="checkbox" id="writeUseEtag"> Replace: use captured ETag as <code>If-Match</code></label>
+          <label class="check"><input type="checkbox" id="writeCreateOnly"> Create-only (<code>If-None-Match: *</code>)</label>
+        </div>
+        <div class="row">
+          <input id="writeIfMatch" class="grow mono" spellcheck="false" placeholder='If-Match ETag (auto-filled from Browse)'>
+          <button id="btnWrite" class="btn primary">Send</button>
+        </div>
+        <div id="writeOut" class="out"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- OWNER · VIEWS ---------- -->
+  <section class="panel" data-panel="views" data-role-show="owner">
+    <div class="grid">
+      <div class="card">
+        <h2>Define a view</h2>
+        <p class="muted">A named, parameterized SPARQL <code>CONSTRUCT</code> — the sole filter on what a grant exposes.</p>
+        <div class="row">
+          <label class="field grow"><span>Title *</span><input id="viewTitle" placeholder="Reading list"></label>
+          <label class="field"><span>Id / Slug</span><input id="viewSlug" spellcheck="false" placeholder="optional"></label>
+        </div>
+        <label class="field"><span>Description</span><input id="viewDesc" placeholder="Public books, filtered by author"></label>
+        <div class="row">
+          <label class="field grow"><span>Content-type hint</span>
+            <select id="viewCtype">
+              <option value="text/turtle">text/turtle</option>
+              <option value="application/ld+json">application/ld+json</option>
+              <option value="application/n-triples">application/n-triples</option>
+              <option value="application/rdf+xml">application/rdf+xml</option>
+            </select></label>
+          <label class="field"><span>Max retrievals</span><input id="viewMax" type="number" min="0" placeholder="∞"></label>
+        </div>
+        <label class="field"><span>CONSTRUCT template *</span>
+          <textarea id="viewTemplate" rows="7" spellcheck="false" class="mono">CONSTRUCT { ?s ?p ?o }
+WHERE { ?s ?p ?o }</textarea></label>
+        <div class="params-head">
+          <span>Parameters</span>
+          <button id="btnAddViewParam" class="btn ghost small">+ parameter</button>
+        </div>
+        <div id="viewParams" class="params"></div>
+        <p class="hint">Each declared parameter must appear as <code>?name</code> in the template. Parameterized views need the explicit <code>CONSTRUCT { … } WHERE { … }</code> form.</p>
+        <div class="row wrap">
+          <label class="check"><input type="checkbox" id="viewReplace"> Replace at this id (PUT instead of POST)</label>
+        </div>
+        <div class="row">
+          <button id="btnViewPreview" class="btn ghost">Preview Turtle</button>
+          <button id="btnViewCreate" class="btn primary">Create view</button>
+        </div>
+        <pre id="viewPreview" class="code" hidden></pre>
+        <div id="viewOut" class="out"></div>
+      </div>
+
+      <div class="card">
+        <h2>Existing views <button id="btnViewsRefresh" class="btn ghost small">Refresh</button></h2>
+        <p class="muted">From <code>/.system/views/</code>. Each definition is fetched to show its shape.</p>
+        <div id="viewsList" class="list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- OWNER · GRANTS ---------- -->
+  <section class="panel" data-panel="grants" data-role-show="owner">
+    <div class="grid">
+      <div class="card">
+        <h2>Issue a grant</h2>
+        <p class="muted">Mint a consumer bearer token that unlocks the chosen views. The secret is shown <strong>once</strong>.</p>
+        <label class="field"><span>Name (optional)</span><input id="grantTitle" placeholder="colleagues"></label>
+        <div class="params-head">
+          <span>Unlock views <button id="btnGrantRefresh" class="btn ghost small">Refresh</button></span>
+        </div>
+        <div id="grantViews" class="checklist"><p class="muted small">Refresh to load views.</p></div>
+        <div class="row">
+          <input id="grantCustomView" class="grow mono" spellcheck="false" placeholder="…or paste a view URI/id to add">
+          <button id="btnGrantAddCustom" class="btn ghost">Add</button>
+        </div>
+        <div class="row">
+          <button id="btnGrantIssue" class="btn primary">Issue grant</button>
+        </div>
+        <div id="grantSecretBox" class="secret-box" hidden></div>
+        <div id="grantOut" class="out"></div>
+      </div>
+
+      <div class="card">
+        <h2>Existing grants <button id="btnGrantsRefresh" class="btn ghost small">Refresh</button></h2>
+        <p class="muted">From <code>/.system/tokens/</code>. Secrets are never retrievable again — only hashes are stored.</p>
+        <div id="grantsList" class="list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- OWNER · POLICIES ---------- -->
+  <section class="panel" data-panel="policies" data-role-show="owner">
+    <div class="grid">
+      <div class="card">
+        <h2>Bound a grant with a policy</h2>
+        <p class="muted">A policy id is the last segment of a grant's <code>policyRef</code>. Any subset of the five constraints applies.</p>
+        <div class="row">
+          <label class="field grow"><span>Policy id</span><input id="policyId" spellcheck="false" placeholder="from a grant's policyRef"></label>
+          <button id="btnPolicyLoad" class="btn ghost">Load current</button>
+        </div>
+        <div class="row">
+          <label class="field grow"><span>Expires at <em class="muted">(UTC)</em></span><input id="polExpiresAt" type="datetime-local" step="1"></label>
+        </div>
+        <div class="row">
+          <label class="field grow"><span>Valid from <em class="muted">(UTC)</em></span><input id="polValidFrom" type="datetime-local" step="1"></label>
+          <label class="field grow"><span>Valid until <em class="muted">(UTC)</em></span><input id="polValidUntil" type="datetime-local" step="1"></label>
+        </div>
+        <div class="row">
+          <label class="field grow"><span>Max retrievals (total)</span><input id="polMaxRetrievals" type="number" min="0" placeholder="unbounded"></label>
+          <label class="field grow"><span>Min interval (seconds)</span><input id="polMinInterval" type="number" min="0" placeholder="none"></label>
+        </div>
+        <div class="row">
+          <button id="btnPolicyPreview" class="btn ghost">Preview Turtle</button>
+          <button id="btnPolicySave" class="btn primary">Save policy</button>
+          <button id="btnPolicyClear" class="btn ghost">Clear fields</button>
+        </div>
+        <pre id="policyPreview" class="code" hidden></pre>
+        <div id="policyOut" class="out"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- OWNER · SPARQL ---------- -->
+  <section class="panel" data-panel="sparql" data-role-show="owner">
+    <div class="card">
+      <h2>SPARQL 1.1 query <span class="muted small">(read-only, over the union graph)</span></h2>
+      <textarea id="sparqlQuery" rows="8" spellcheck="false" class="mono">SELECT ?s ?p ?o
+WHERE { ?s ?p ?o }
+LIMIT 25</textarea>
+      <div class="row wrap">
+        <label class="field"><span>Method</span>
+          <select id="sparqlMethod"><option>POST</option><option>GET</option></select></label>
+        <label class="field grow"><span>Accept</span>
+          <select id="sparqlAccept">
+            <option value="application/sparql-results+json">results+json (SELECT/ASK)</option>
+            <option value="application/sparql-results+xml">results+xml</option>
+            <option value="text/csv">text/csv (SELECT)</option>
+            <option value="text/turtle">turtle (CONSTRUCT/DESCRIBE)</option>
+            <option value="application/ld+json">ld+json</option>
+            <option value="application/n-triples">n-triples</option>
+            <option value="application/rdf+xml">rdf+xml</option>
+          </select></label>
+        <label class="check"><input type="checkbox" id="sparqlSystem"> include <code>.system/</code></label>
+      </div>
+      <div class="params-head"><span>Variable bindings <span class="muted small">(injection-safe)</span></span>
+        <button id="btnAddBinding" class="btn ghost small">+ binding</button></div>
+      <div id="sparqlBindings" class="params"></div>
+      <div class="row"><button id="btnSparqlRun" class="btn primary">Run query</button></div>
+      <div id="sparqlOut" class="out"></div>
+    </div>
+  </section>
+
+  <!-- ---------- OWNER · STATS ---------- -->
+  <section class="panel" data-panel="stats" data-role-show="owner">
+    <div class="card">
+      <h2>Delivery statistics <button id="btnStats" class="btn ghost small">Load</button></h2>
+      <p class="muted">Aggregated from the access log via <code>/.engine/stats</code>. Successful deliveries only.</p>
+      <div id="statsOut" class="out"></div>
+    </div>
+  </section>
+
+  <!-- ---------- CONSUMER · DISCOVER ---------- -->
+  <section class="panel" data-panel="discover" data-role-show="consumer" hidden>
+    <div class="card">
+      <h2>Views your grant unlocks <button id="btnDiscover" class="btn primary small">Load views</button></h2>
+      <p class="muted">From <code>/.engine/discovery</code>. Fill any parameters and fetch a result; shared binaries appear as download buttons.</p>
+      <div id="discoverList" class="list"></div>
+    </div>
+  </section>
+
+  <!-- ---------- CONSUMER · MANUAL ---------- -->
+  <section class="panel" data-panel="manual" data-role-show="consumer" hidden>
+    <div class="grid">
+      <div class="card">
+        <h2>Fetch a view by id</h2>
+        <div class="row">
+          <input id="cViewId" class="grow mono" spellcheck="false" placeholder="view id">
+        </div>
+        <div class="params-head"><span>Parameters</span>
+          <button id="btnAddCParam" class="btn ghost small">+ parameter</button></div>
+        <div id="cParams" class="params"></div>
+        <div class="row"><button id="btnCFetch" class="btn primary">Fetch</button></div>
+        <div id="cFetchOut" class="out"></div>
+      </div>
+      <div class="card">
+        <h2>Download a proxied resource</h2>
+        <p class="muted">Paste a <code>/.engine/blob/…</code> URL from a view result.</p>
+        <label class="field"><span>Blob URL</span>
+          <input id="cBlobUrl" class="mono" spellcheck="false" placeholder="http://…/.engine/blob/{id}?uri=…"></label>
+        <div class="row"><button id="btnCBlob" class="btn primary">Download</button></div>
+        <div id="cBlobOut" class="out"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============================= LOG DRAWER ============================= -->
+<aside id="logDrawer" class="log-drawer" hidden aria-label="Request log">
+  <div class="log-head">
+    <strong>Request log</strong>
+    <span class="grow"></span>
+    <button id="btnLogClear" class="btn ghost small">Clear</button>
+    <button id="btnLogClose" class="btn ghost small">Close ✕</button>
+  </div>
+  <div id="logBody" class="log-body"></div>
+</aside>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<footer class="foot">
+  <span>Zero-dependency testing console for the Personal LDP Pod. Open <code>index.html</code> directly — no build step.</span>
+</footer>
+
+<script src="rdf.js?v=2"></script>
+<script src="client.js?v=2"></script>
+<script src="app.js?v=2"></script>
+</body>
+</html>
