@@ -1,9 +1,4 @@
 """Shared FastAPI assembly for the pod's role-specific apps.
-
-The bundled pod, the storage-only server, and the engine-only server each build their
-own FastAPI app with a role-specific description and router set, but the CORS policy,
-the OpenAPI security-scheme wiring, and the TLS-at-launch check are identical — they
-live here so the three roles cannot drift.
 """
 
 from typing import Literal
@@ -68,12 +63,6 @@ def add_cors(app: FastAPI, cors: CorsSettings) -> None:
 
 
 def install_openapi_security(app: FastAPI) -> None:
-    """Wire the bearer security schemes into *app*'s generated OpenAPI schema.
-
-    Routes reference the schemes by name through ``openapi_extra``; the scheme
-    definitions themselves have no FastAPI dependency to hang off (token validation
-    is a plain header check), so they are attached here.
-    """
 
     def openapi_with_security() -> dict:
         if app.openapi_schema:
@@ -86,9 +75,6 @@ def install_openapi_security(app: FastAPI) -> None:
             tags=app.openapi_tags,
         )
         schema.setdefault("components", {})["securitySchemes"] = SECURITY_SCHEMES
-        # Raw-bytes body parameters auto-generate an application/json binary placeholder
-        # that survives the openapi_extra merge; drop it wherever a route documented its
-        # real media types.
         for path_item in schema["paths"].values():
             for operation in path_item.values():
                 content = operation.get("requestBody", {}).get("content", {})
@@ -106,12 +92,6 @@ def install_openapi_security(app: FastAPI) -> None:
 
 
 def run_uvicorn(import_string: str, settings: Settings) -> None:
-    """Launch *import_string* under uvicorn, enforcing the TLS-required precondition.
-
-    Enforced here rather than in ``check_tls_precondition``: a direct uvicorn launch
-    supplies certs as CLI flags the Settings object never sees, so only this launch
-    path can know the files are actually being handed to uvicorn.
-    """
     import uvicorn
 
     if settings.tls_mode == "required" and (

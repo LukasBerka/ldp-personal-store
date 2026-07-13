@@ -1,7 +1,4 @@
 """Content negotiation, serialization, ETag, and header helpers for RDF over HTTP.
-
-Pure helpers shared by the storage server and the view engine: they touch only rdflib
-and the request/response headers, never a storage backend.
 """
 
 import hashlib

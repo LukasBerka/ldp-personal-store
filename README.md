@@ -1,7 +1,14 @@
-# bachelor-thesis-project
+# Personal LDP Pod
 
-A FastAPI application managed with [uv](https://docs.astral.sh/uv/), type-checked
-with [pyrefly](https://pyrefly.org/) and linted/formatted with [ruff](https://docs.astral.sh/ruff/).
+A self-hostable **Personal LDP Pod**: a FastAPI [Linked Data Platform](https://www.w3.org/TR/ldp/)
+server that stores your RDF and binary data behind a uniform LDP/HTTP surface with a
+read-only SPARQL 1.1 endpoint, and shares precise, query-defined slices of it with chosen
+consumers under revocable, policy-bounded bearer tokens — using only standard LDP/HTTP
+clients, no proprietary client required. This is the implementation artifact of the
+bachelor thesis.
+
+Managed with [uv](https://docs.astral.sh/uv/), type-checked with [pyrefly](https://pyrefly.org/)
+and linted/formatted with [ruff](https://docs.astral.sh/ruff/).
 
 ## Prerequisites
 
@@ -85,6 +92,31 @@ else to storage, so the record URIs storage mints and the proxy URLs the engine 
 one base. See the comments in `docker-compose.yml` and the "Split-deployment settings" table
 under [Configuration](#configuration) for the full set of knobs.
 
+## Clients and test harnesses
+
+Three companion tools live alongside the server. None is part of the shipped pod; each
+drives it over the same standard HTTP surface and is excluded from the packaged app.
+
+- **`testing_client/`** — a zero-dependency static **test console** (the current one). A
+  single-page web app (open `index.html`, no build step, no server) that drives the pod's
+  HTTP API as both **owner** — write data, define parameterized SPARQL `CONSTRUCT` views,
+  issue policy-bounded grants, run SPARQL, read delivery stats — and **consumer** — discover
+  the views a grant unlocks and read their results through the engine surface. See
+  `testing_client/README.md`.
+
+- **`penny/`** — a shim that lets [**Penny**](https://penny.vincenttunru.com/), a real
+  third-party Solid/LDP data browser, drive the pod. An auth-injecting reverse proxy
+  (`proxy.py`) stamps the bearer token onto Penny's credential-less requests and normalises
+  CORS, so a GUI that expects Solid-OIDC login browses the pod's static-token surface with
+  no login. `./run.sh` starts pod + proxy for owner or consumer browsing. See
+  `penny/README.md`.
+
+- **`w3c_ldp_test_suite/`** — the official [W3C LDP Test Suite](https://github.com/w3c/ldp-testsuite)
+  wired to run against the pod, producing [EARL](https://www.w3.org/TR/EARL10-Schema/)
+  conformance reports. Everything runs in Docker containers on one network (`run.sh`), with
+  a dependency-free auth proxy (`auth_proxy.py`) that adds the bearer token the suite cannot
+  send itself, so the server runs unchanged under test. See `w3c_ldp_test_suite/README.md`.
+
 ## Configuration
 
 Every setting except the admin token has a working default and is read from an
@@ -113,9 +145,9 @@ profile that does this); the bundled single-process pod leaves them all at their
 | Env var | Default | Purpose |
 | --- | --- | --- |
 | `LDP_ENGINE_TOKEN` | fresh per boot | Plaintext credential the view engine presents to storage on the engine→storage boundary; only its SHA-256 hash is persisted. Unset (bundled), a new token is minted each startup and kept in process memory; set the **same** value on the engine and the storage server when they run as separate processes. |
-| `LDP_STORAGE_URL` | in-process | Base URL of the upstream storage server holding the engine's state records. Unset (bundled), the engine reaches storage over an in-process ASGI transport (same surface, no socket); set it to run the engine against a storage server listening elsewhere (loopback or remote). |
+| `LDP_STATE_STORAGE_URL` | in-process | Base URL of the upstream storage server holding the engine's state records. Unset (bundled), the engine reaches storage over an in-process ASGI transport (same surface, no socket); set it to run the engine against a storage server listening elsewhere (loopback or remote). |
 | `LDP_STATE_GRAPH` | `urn:ldp:engine-state` | Named graph holding the engine's operating state (token/view/policy records and the access log), kept out of view-CONSTRUCT scope. A stable logical name the engine and store agree on; this server realizes it as its reserved `.system/` subtree. |
-| `LDP_DATA_SOURCE_URL` | `LDP_STORAGE_URL` | The store the engine queries for view CONSTRUCTs and binary reads, as opposed to the state store above. Unset, it is co-located with the state store; set it to point the engine at a separate SPARQL/LDP data source (e.g. a third-party store). |
+| `LDP_DATA_SOURCE_URL` | `LDP_STATE_STORAGE_URL` | The store the engine queries for view CONSTRUCTs and binary reads, as opposed to the state store above. Unset, it is co-located with the state store; set it to point the engine at a separate SPARQL/LDP data source (e.g. a third-party store). |
 | `LDP_DATA_SOURCE_BASE_URI` | `LDP_BASE_URI` | The namespace data-source resources carry — the "upstream" URIs the engine rewrites into gated proxy URLs and guards the blob endpoint against. Unset, it matches the engine's own public base. |
 | `LDP_DATA_SOURCE_TOKEN` | `LDP_ENGINE_TOKEN` | Credential the engine presents to the data source. Unset, it reuses the engine token (co-located: same credential as the state store). |
 | `LDP_DATA_SOURCE_AUTH` | `bearer` | Auth scheme the engine uses against the data source: `bearer` \| `basic` (`LDP_DATA_SOURCE_TOKEN` as `user:password`) \| `none`. |

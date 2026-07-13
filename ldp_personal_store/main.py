@@ -1,11 +1,4 @@
 """The bundled LDP Personal Store: the view engine and reference storage in one process.
-
-This composition root mounts both surfaces' routers on a single FastAPI app and wires the
-engine's storage client to that same app over an in-process ASGI transport — the identical
-HTTP surface a split deployment reaches over the network. The view-engine product stays
-independent (``ldp_view_engine`` never imports ``ldp_personal_store``); this module is the
-one place that depends on both. The canonical zero-config run command is
-``LDP_ADMIN_TOKEN=… uv run python -m ldp_personal_store.main``.
 """
 
 from collections.abc import AsyncGenerator
@@ -48,7 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # The bundled pod reaches storage in-process (ASGI), which routes every request to
     # this app regardless of its URL. A distinct data source is therefore unreachable from
     # the bundled process — refuse rather than silently serve view data from ourselves.
-    if settings.storage_url is None and settings.data_source_url is not None:
+    if settings.state_storage_url is None and settings.data_source_url is not None:
         raise RuntimeError(
             "the bundled pod reaches storage in-process and cannot target a separate "
             "LDP_DATA_SOURCE_URL; run the engine as its own process (python -m "
@@ -63,11 +56,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # The engine's storage credential and HTTP client: the bundled deployment talks
     # to this same app over an in-process ASGI transport — the identical HTTP
-    # surface a split deployment reaches over the network via LDP_STORAGE_URL.
+    # surface a split deployment reaches over the network via LDP_STATE_STORAGE_URL.
     engine_plaintext = bootstrap_engine_token(
         backend, app.state.system_ns, engine_token=settings.engine_token
     )
-    if settings.storage_url is not None:
+    if settings.state_storage_url is not None:
         http = httpx.AsyncClient()
     else:
         http = httpx.AsyncClient(
@@ -78,7 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         http,
         base_uri=settings.base_uri,
         state_token=engine_plaintext,
-        state_url=settings.storage_url,
+        state_url=settings.state_storage_url,
         data_url=settings.effective_data_source_url,
         data_base_uri=settings.effective_data_source_base_uri,
         data_token=settings.effective_data_source_token,

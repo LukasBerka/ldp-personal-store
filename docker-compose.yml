@@ -75,7 +75,7 @@ services:
       LDP_PORT: "8001"
       # Reach the storage server (state store + co-located data source) over the network,
       # exactly as it would an arbitrary third-party LDP + SPARQL store.
-      LDP_STORAGE_URL: "http://storage:8000/"
+      LDP_STATE_STORAGE_URL: "http://storage:8000/"
       LDP_ENGINE_TOKEN: ${LDP_ENGINE_TOKEN:?set LDP_ENGINE_TOKEN so the engine can authenticate}
     depends_on:
       storage:

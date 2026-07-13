@@ -28,8 +28,9 @@ dev = [
 line-length = 100
 target-version = "py314"
 src = ["."]
-# The bundled W3C LDP Test Suite harness is not a part of the shipped code
-extend-exclude = ["w3c_ldp_test_suite"]
+# Local testing harnesses (the W3C LDP Test Suite and the Penny browser proxy) are
+# not part of the shipped code
+extend-exclude = ["w3c_ldp_test_suite", "penny"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]

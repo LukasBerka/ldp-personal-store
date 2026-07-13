@@ -43,48 +43,38 @@ class Settings(BaseSettings):
     ssl_certfile: Path | None = None
 
     # The pod owner's admin credential (PLAINTEXT). Required for the storage and bundled
-    # roles — those lifespans refuse to boot without it (see require_admin_token), so a pod
-    # never comes up with an absent or default admin token. The standalone view-engine role
-    # does not use it (it validates the *presented* request token against storage), so it is
-    # optional at this shared level and enforced per role instead. Only its SHA-256 hash is
-    # persisted — the plaintext is never written to disk or the log. The owner chooses the
-    # value, e.g. the output of `openssl rand -base64 32`.
+    # roles
     admin_token: str | None = None
 
     # Optional PLAINTEXT engine token: the credential the view engine presents on the
-    # engine->storage boundary. Only its SHA-256 hash is persisted. Left unset, the
-    # bundled deployment issues a fresh engine token on every startup and keeps the
-    # plaintext in process memory only; set it explicitly when the engine runs as a
+    # engine->storage boundary. Left unset, the bundled deployment issues a fresh engine token on every startup.
+    # set it explicitly when the engine runs as a
     # separate process against a remote storage server.
     engine_token: str | None = None
 
-    # Base URL of the upstream storage server the view engine talks to. Left unset
-    # (the bundled deployment), the engine reaches storage through an in-process
-    # ASGI transport — the same HTTP surface, no network socket. Set it to run the
-    # engine against a storage server listening elsewhere (loopback or remote).
-    storage_url: str | None = None
+    # Base URL of the upstream storage server holding the engine's own state records. Set it
+    # to run the engine against a state store listening elsewhere (loopback or remote).
+    state_storage_url: str | None = None
 
     # The named graph that holds the engine's operating state (token/view/policy records
-    # and the access log), kept out of view-CONSTRUCT scope. The engine names it in a
-    # standard SPARQL FROM clause to reach that state on any store; this reference server
+    # and the access log), this reference server
     # realizes it locally as its reserved `.system/` subtree. Not derived from base_uri —
     # it is a stable logical name the engine and store agree on.
     state_graph: str = "urn:ldp:engine-state"
 
-    # The data source the engine queries for view CONSTRUCTs and binary reads, as opposed
-    # to the state store (storage_url) that holds the engine's own records. Left unset it
-    # defaults to storage_url — the co-located default where one server holds both. Set it
+    # The data source the engine queries for view CONSTRUCTs and binary reads.
+    # defaults to state_storage_url. Set it
     # to point the engine at a separate SPARQL/LDP data source (e.g. a third-party store).
     data_source_url: str | None = None
 
     # The namespace the data-source resources carry: what the engine treats as an
     # "upstream" URI to rewrite into a gated proxy URL and to guard the blob endpoint
-    # against. Independent of base_uri (the engine's own public base). Left unset it
-    # defaults to base_uri — correct when the data source is the co-located pod.
+    # against. Independent of base_uri (the engine's own public base). it
+    # defaults to base_uri.
     data_source_base_uri: str | None = None
 
-    # Credential the engine presents to the data source. Left unset it defaults to
-    # engine_token (co-located: same credential as the state store).
+    # Credential the engine presents to the data source. it defaults to
+    # engine_token.
     data_source_token: str | None = None
 
     # Auth scheme the engine uses against the data source: a bearer token, HTTP Basic
@@ -106,7 +96,7 @@ class Settings(BaseSettings):
     @property
     def effective_data_source_url(self) -> str | None:
         """The data-source URL, defaulting to the state store (co-located)."""
-        return self.data_source_url if self.data_source_url is not None else self.storage_url
+        return self.data_source_url if self.data_source_url is not None else self.state_storage_url
 
     @property
     def effective_data_source_base_uri(self) -> str:

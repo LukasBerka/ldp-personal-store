@@ -1,9 +1,4 @@
 """Engine-role FastAPI app: the view engine as its own process against a remote store.
-
-The engine holds no local storage backend; it reaches an arbitrary standard
-LDP + SPARQL 1.1 store over HTTP (``LDP_STORAGE_URL``, authenticated with
-``LDP_ENGINE_TOKEN``). The bundled single-process pod is ``ldp_personal_store.main``,
-which wires the same engine to an in-process storage app instead.
 """
 
 from collections.abc import AsyncGenerator
@@ -26,9 +21,9 @@ from ldp_view_engine.engine import router as engine_router
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     check_tls_precondition(settings)
-    if settings.storage_url is None:
+    if settings.state_storage_url is None:
         raise RuntimeError(
-            "the engine role requires LDP_STORAGE_URL (the state store it keeps its records "
+            "the engine role requires LDP_STATE_STORAGE_URL (the state store it keeps its records "
             "in); the bundled single-process pod is ldp_personal_store.main, not this app."
         )
     engine_token = settings.engine_token
@@ -46,7 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         http,
         base_uri=settings.base_uri,
         state_token=engine_token,
-        state_url=settings.storage_url,
+        state_url=settings.state_storage_url,
         data_url=settings.effective_data_source_url,
         data_base_uri=settings.effective_data_source_base_uri,
         data_token=settings.effective_data_source_token,

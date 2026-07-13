@@ -1,8 +1,3 @@
-"""Storage-side view authoring: submission parsing, CONSTRUCT-template validation, and
-RDF serialization of a view definition. The shared read/bind model lives in
-:mod:`ldp_common.viewmodel`.
-"""
-
 import re
 
 from pydantic import BaseModel, ValidationError
@@ -104,10 +99,13 @@ def validate_construct_template(template: str) -> None:
 
 
 def check_params_against_template(template: str, decls: list[ParamDecl]) -> None:
-    """Raise ValueError if a declared parameter never appears as ``?name`` in the
-    template. The regex scan may false-positive on a ``?name`` inside a string
-    literal, which is acceptable for a personal pod's view authoring workflow.
+    """Raise ValueError unless every declared parameter can be bound into *template*.
     """
+    if decls and "template" not in parseQuery(template)[1]:
+        raise ValueError(
+            "A parameterized view must use the explicit CONSTRUCT { ... } WHERE { ... } "
+            "form, not the CONSTRUCT WHERE { ... } shorthand"
+        )
     template_vars = set(re.findall(r"\?(\w+)", template))
     for decl in decls:
         if decl.name not in template_vars:
