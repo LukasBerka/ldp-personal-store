@@ -3,7 +3,7 @@
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
-from ldp_common.vocab import LDP_BasicContainer, LDP_RDFSource, LDP_Resource
+from ldp_common.vocabulary import LDP_BasicContainer, LDP_RDFSource, LDP_Resource
 from ldp_personal_store.storage.backend import ResourceNotFound, StorageBackend
 
 

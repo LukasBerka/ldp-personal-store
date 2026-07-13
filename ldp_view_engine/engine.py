@@ -15,8 +15,8 @@ from ldp_common.viewmodel import (
     bind_params,
     parse_view_record,
 )
-from ldp_common.vocab import make_system_ns
-from ldp_view_engine.auth import EngineConsumerDep, StorageDep
+from ldp_common.vocabulary import make_system_ns
+from ldp_view_engine.authentication import EngineConsumerDep, StorageDep
 from ldp_view_engine.bindings import BindingError, inject_values
 from ldp_view_engine.client import StorageClient, UpstreamNotFound
 from ldp_view_engine.policy import check_policy

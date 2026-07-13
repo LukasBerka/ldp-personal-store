@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 from rdflib import Graph, URIRef
 
-from ldp_common.vocab import (
+from ldp_common.vocabulary import (
+    POD_SPARQL_PREFIX,
     POD_enforcementCount,
     POD_lastUsedAt,
     POD_linkedView,
@@ -21,14 +22,16 @@ from ldp_common.vocab import (
 # Unix epoch: the initial lastUsedAt before any successful delivery bumps it.
 EPOCH = "1970-01-01T00:00:00Z"
 
-LOOKUP_QUERY = """
-PREFIX pod: <urn:pod:vocab:>
+LOOKUP_QUERY = (
+    POD_SPARQL_PREFIX
+    + """
 SELECT ?tokenUri ?stored ?tokenType WHERE {
     ?tokenUri pod:tokenHash ?stored ;
               a ?tokenType .
     FILTER(str(?stored) = str(?presented))
 }
 """
+)
 
 
 @dataclass(frozen=True)

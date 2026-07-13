@@ -16,7 +16,9 @@ from ldp_common.apidocs import (
 from ldp_common.config import Settings, SettingsDep
 from ldp_common.datetime import parse_xsd_datetime
 from ldp_common.rdfcontent import etag_for_graph, link_header, parse_rdf_body
-from ldp_common.vocab import (
+from ldp_common.vocabulary import (
+    POD_SPARQL_PREFIX,
+    POD_TTL_PREFIX,
     DC_title,
     LDP_BasicContainer,
     LDP_Container,
@@ -33,9 +35,9 @@ from ldp_common.vocab import (
     POD_validFrom,
     POD_validUntil,
 )
-from ldp_personal_store.auth.deps import AdminTokenDep, StorageTokenDep
-from ldp_personal_store.auth.tokens_store import issue_token, revoke_token
-from ldp_personal_store.ldp.deps import BackendDep, RawBodyDep, http_error
+from ldp_personal_store.authentication.dependencies import AdminTokenDep, StorageTokenDep
+from ldp_personal_store.authentication.tokens_store import issue_token, revoke_token
+from ldp_personal_store.ldp.dependencies import BackendDep, RawBodyDep, http_error
 from ldp_personal_store.storage.backend import ResourceNotFound, StorageBackend, StorageError
 
 router = APIRouter(prefix="/.system", tags=["system"])
@@ -46,10 +48,10 @@ _ENGINE_READABLE_PREFIXES = ("views/", "tokens/")
 # instances it contains. Membership is derived from the union graph on every GET,
 # so the listings are always current with no persisted container state.
 _CONTAINER_MEMBER_QUERIES: dict[str, str] = {
-    "views": "PREFIX pod: <urn:pod:vocab:> SELECT ?m WHERE { ?m a pod:View }",
-    "tokens": "PREFIX pod: <urn:pod:vocab:> SELECT ?m WHERE { ?m a pod:Token }",
-    "tokens/policies": "PREFIX pod: <urn:pod:vocab:> SELECT ?m WHERE { ?m a pod:Policy }",
-    "access-log": "PREFIX pod: <urn:pod:vocab:> SELECT ?m WHERE { ?m a pod:AccessLogEntry }",
+    "views": f"{POD_SPARQL_PREFIX} SELECT ?m WHERE {{ ?m a pod:View }}",
+    "tokens": f"{POD_SPARQL_PREFIX} SELECT ?m WHERE {{ ?m a pod:Token }}",
+    "tokens/policies": f"{POD_SPARQL_PREFIX} SELECT ?m WHERE {{ ?m a pod:Policy }}",
+    "access-log": f"{POD_SPARQL_PREFIX} SELECT ?m WHERE {{ ?m a pod:AccessLogEntry }}",
 }
 
 _CONTAINER_LINK = link_header([LDP_Resource, LDP_RDFSource, LDP_Container, LDP_BasicContainer])
@@ -84,8 +86,7 @@ def _validate_constraint(value: str, datatype: URIRef) -> None:
             "echoes the grant's optional owner-chosen name; `pod:policyRef` names the "
             "policy resource to `PUT` for bounding this grant; `Location` names the "
             "record for later revocation.",
-            "@prefix pod: <urn:pod:vocab:> .\n"
-            "@prefix dcterms: <http://purl.org/dc/terms/> .\n\n"
+            POD_TTL_PREFIX + "@prefix dcterms: <http://purl.org/dc/terms/> .\n\n"
             "<https://pod.example/.system/tokens/NGlxYzZa> a pod:Token , pod:ConsumerToken ;\n"
             '    dcterms:title "colleagues" ;\n'
             "    pod:linkedView <https://pod.example/.system/views/reading-list> ;\n"
@@ -104,8 +105,7 @@ def _validate_constraint(value: str, datatype: URIRef) -> None:
             "unlocks (any number, including none; the subject term is irrelevant). An "
             "optional `dcterms:title` names the grant for the owner's own recognition — "
             "e.g. `access-bob` or `colleagues` — and never affects validation.",
-            "@prefix pod: <urn:pod:vocab:> .\n"
-            "@prefix dcterms: <http://purl.org/dc/terms/> .\n\n"
+            POD_TTL_PREFIX + "@prefix dcterms: <http://purl.org/dc/terms/> .\n\n"
             '[] dcterms:title "colleagues" ;\n'
             "   pod:linkedView <https://pod.example/.system/views/reading-list> ,\n"
             "                  <https://pod.example/.system/views/schedule> .",
@@ -168,8 +168,7 @@ def issue_grant(
             "(seconds between deliveries, `xsd:integer`). Omitted constraints do not "
             "bind. The `{policy_id}` to PUT to is the last path segment of the grant's "
             "`pod:policyRef`.",
-            "@prefix pod: <urn:pod:vocab:> .\n"
-            "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n\n"
+            POD_TTL_PREFIX + "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n\n"
             "[] a pod:Policy ;\n"
             '    pod:expiresAt "2026-12-31T23:59:59Z"^^xsd:dateTime ;\n'
             '    pod:maxRetrievals "20"^^xsd:integer ;\n'

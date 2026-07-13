@@ -69,8 +69,12 @@ run_suite() {
 
 # Basic container tests (pod root) + the LDP Non-RDF Source group, then Direct.
 # Indirect is intentionally omitted — the pod implements only Basic and Direct.
-run_suite basic  --server "http://proxy:9000/"            --basic --non-rdf
-run_suite direct --server "http://proxy:9000/tck-direct/" --direct
+# --read-only-prop names a server-managed property so the suite runs its
+# constraint-publishing tests: the pod refuses a PUT that touches ldp:contains and
+# advertises the constraint via an ldp:constrainedBy Link header.
+RO_PROP="http://www.w3.org/ns/ldp#contains"
+run_suite basic  --server "http://proxy:9000/"            --basic --non-rdf --read-only-prop "$RO_PROP"
+run_suite direct --server "http://proxy:9000/tck-direct/" --direct          --read-only-prop "$RO_PROP"
 
 echo "==> Done. EARL conformance reports:"
 echo "   $REPORTS/basic/report/ldp-testsuite-execution-report-earl.ttl"

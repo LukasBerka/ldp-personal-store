@@ -7,7 +7,8 @@ from rdflib.namespace import RDF
 from ldp_common.apidocs import ADMIN_AUTH, CONSUMER_AUTH, UNAUTHORIZED, turtle_response
 from ldp_common.rdfcontent import link_header
 from ldp_common.viewmodel import parse_view_record
-from ldp_common.vocab import (
+from ldp_common.vocabulary import (
+    POD_TTL_PREFIX,
     DC_description,
     DC_title,
     LDP_BasicContainer,
@@ -20,7 +21,7 @@ from ldp_common.vocab import (
     POD_paramType,
     POD_View,
 )
-from ldp_view_engine.auth import EngineAdminDep, EngineConsumerDep, StorageDep
+from ldp_view_engine.authentication import EngineAdminDep, EngineConsumerDep, StorageDep
 from ldp_view_engine.client import StorageClient, UpstreamNotFound
 from ldp_view_engine.stats import StatsResponse, compute_stats
 
@@ -68,8 +69,7 @@ async def _describe_member(
         200: turtle_response(
             "The discovery container.",
             "@prefix ldp: <http://www.w3.org/ns/ldp#> .\n"
-            "@prefix dcterms: <http://purl.org/dc/terms/> .\n"
-            "@prefix pod: <urn:pod:vocab:> .\n\n"
+            "@prefix dcterms: <http://purl.org/dc/terms/> .\n" + POD_TTL_PREFIX + "\n"
             "<https://pod.example/.engine/discovery> a ldp:BasicContainer ;\n"
             "    ldp:contains <https://pod.example/.engine/views/reading-list> .\n\n"
             "<https://pod.example/.engine/views/reading-list> a pod:View ;\n"

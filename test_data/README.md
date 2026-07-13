@@ -7,11 +7,11 @@
 LDP_ADMIN_TOKEN=devtoken uv run python -m ldp_personal_store.main
 
 # terminal 2 — load everything, mint tokens, attach policies, log demo fetches
-ADMIN=devtoken ./test-data/seed.sh
-. test-data/tokens.env       # exports COLLEAGUE_TOKEN, FAMILY_TOKEN, ...
+ADMIN=devtoken ./test_data/seed.sh
+. test_data/tokens.env       # exports COLLEAGUE_TOKEN, FAMILY_TOKEN, ...
 ```
 
-`BASE=https://pod.example.org ADMIN=... ./test-data/seed.sh` retargets another
+`BASE=https://pod.example.org ADMIN=... ./test_data/seed.sh` retargets another
 pod (the base URI baked into the `.ttl` files is rewritten on the fly).
 Resources and views are PUT with fixed URIs, so re-running is idempotent —
 except that each run mints a fresh set of consumer tokens (old ones remain
@@ -53,7 +53,7 @@ token must yield 401.
 **UC4** — `shopping-list` returns 6 items with name/quantity/category/done.
 To simulate the week's churn:
 ```bash
-sed "s|http://localhost:8000|$BASE|g" test-data/uc4-shopping/list-week2.ttl | \
+sed "s|http://localhost:8000|$BASE|g" test_data/uc4-shopping/list-week2.ttl | \
   curl -X PUT "$BASE/shopping/list" -H "Authorization: Bearer $ADMIN" \
        -H "Content-Type: text/turtle" --data-binary @-
 ```

@@ -19,7 +19,7 @@ from ldp_common.tokenrecord import (
     token_record_from_graph,
     unauthorized,
 )
-from ldp_common.vocab import (
+from ldp_common.vocabulary import (
     DC_title,
     POD_AdminToken,
     POD_ConsumerToken,

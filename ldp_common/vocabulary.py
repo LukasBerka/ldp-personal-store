@@ -1,4 +1,4 @@
-"""RDF namespaces and vocabulary terms for the Personal LDP Pod."""
+"""RDF namespaces and vocabulary terms for the LDP Personal Store."""
 
 from rdflib.namespace import Namespace
 from rdflib.term import URIRef
@@ -42,12 +42,13 @@ DC_description: URIRef = DCTERMS.description
 
 
 # ---------------------------------------------------------------------------
-# Personal Pod vocabulary — urn:pod:vocab:
-# A URN keeps the token-record vocabulary self-contained; no resolvable URI is
-# implied. This identifier is stable across restarts and is never derived from
-# base_uri — the vocab terms are not runtime-configurable.
+# LDP Personal Store vocabulary — https://lukasberka.github.io/ldp-personal-store/vocab#
+# A dereferenceable HTTPS namespace: the terms are documented at that address on
+# the project's GitHub Pages site, so a Linked Data client can follow any term IRI
+# to its definition. The namespace is a fixed constant, never derived from a pod's
+# base_uri, so the terms stay stable across deployments while remaining resolvable.
 # ---------------------------------------------------------------------------
-POD = Namespace("urn:pod:vocab:")
+POD = Namespace("https://lukasberka.github.io/ldp-personal-store/vocab#")
 
 # Token record classes
 POD_Token: URIRef = POD.Token  # common supertype
@@ -87,6 +88,11 @@ POD_AccessLogEntry: URIRef = POD.AccessLogEntry  # rdf:type marker on one record
 POD_accessLogView: URIRef = POD.accessLogView  # URIRef to the .system/views/{id} that was served
 POD_accessLogToken: URIRef = POD.accessLogToken  # URIRef to the authorizing .system/tokens/{id}
 POD_accessLogTimestamp: URIRef = POD.accessLogTimestamp  # xsd:dateTime instant delivery was served
+
+# Reusable prefix declarations, so the namespace IRI has a single source of truth
+# wherever ``pod:`` is embedded in a SPARQL query or a Turtle document literal.
+POD_SPARQL_PREFIX: str = f"PREFIX pod: <{POD}>"
+POD_TTL_PREFIX: str = f"@prefix pod: <{POD}> .\n"
 
 
 # ---------------------------------------------------------------------------

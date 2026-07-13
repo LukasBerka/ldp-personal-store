@@ -18,11 +18,15 @@ from ldp_common.config import (
     get_settings,
     require_admin_token,
 )
-from ldp_common.vocab import make_engine_ns, make_system_ns
+from ldp_common.vocabulary import make_engine_ns, make_system_ns
 from ldp_personal_store import __version__
-from ldp_personal_store.auth.router import router as system_router
-from ldp_personal_store.auth.tokens_store import bootstrap_admin_token, bootstrap_engine_token
+from ldp_personal_store.authentication.router import router as system_router
+from ldp_personal_store.authentication.tokens_store import (
+    bootstrap_admin_token,
+    bootstrap_engine_token,
+)
 from ldp_personal_store.bootstrap import init_root_container
+from ldp_personal_store.ldp.router import add_constraints_route
 from ldp_personal_store.ldp.router import router as ldp_router
 from ldp_personal_store.sparql.router import router as sparql_router
 from ldp_personal_store.storage.filesystem import FilesystemBackend
@@ -48,7 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 _DESCRIPTION = """\
-The **storage role** of the Personal LDP Pod: RDF and binary storage behind a uniform
+The **storage role** of the LDP Personal Store: RDF and binary storage behind a uniform
 LDP/HTTP surface, a read-only SPARQL 1.1 Protocol endpoint, and the pod owner's `.system/`
 administration tree (views, grants, policies, the access log). This is a standard
 LDP + SPARQL 1.1 server; the view engine is a separate product that reads through it.
@@ -101,7 +105,7 @@ _TAGS_METADATA = [
 ]
 
 app = FastAPI(
-    title="Personal LDP Pod — Storage",
+    title="LDP Personal Store — Storage",
     version=__version__,
     description=_DESCRIPTION,
     openapi_tags=_TAGS_METADATA,
@@ -111,6 +115,7 @@ app = FastAPI(
 add_cors(app, get_cors_settings())
 install_openapi_security(app)
 add_health(app, __version__)
+add_constraints_route(app)
 
 # The more-specific /.system/views router must precede the /.system catch-all, and the
 # engine's state-write surface likewise; all precede the LDP /{path:path} catch-all so

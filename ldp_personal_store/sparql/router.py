@@ -16,8 +16,8 @@ from ldp_common.rdfcontent import (
     negotiate_media,
     normalize_media_type,
 )
-from ldp_personal_store.auth.deps import get_storage_token
-from ldp_personal_store.ldp.deps import BackendDep
+from ldp_personal_store.authentication.dependencies import get_storage_token
+from ldp_personal_store.ldp.dependencies import BackendDep
 from ldp_personal_store.storage.backend import StorageBackend
 
 router = APIRouter(prefix="/sparql", tags=["sparql"], dependencies=[Depends(get_storage_token)])
@@ -106,6 +106,13 @@ def _apply_state_scope(sparql: str, state_graph: str) -> tuple[str, bool]:
     flag. When present, the clause is stripped (this store realizes the state graph as its
     ``.system/`` subtree rather than a literal named graph) and evaluation widens to
     include those records.
+
+    Faithfulness caveat: a strict store answers ``FROM <g>`` by *narrowing* the default
+    graph to ``g`` alone; this store instead *widens* to the union of data and state. The
+    results coincide for every query the engine issues (each selects on terms unique to
+    the state records), but a query joining state against data would see data + state here
+    and state only on a strict store. The realization is faithful for the engine's fixed
+    queries, not for arbitrary state↔data joins.
     """
     pattern = re.compile(r"\bFROM\s+(?:NAMED\s+)?<" + re.escape(state_graph) + r">", re.IGNORECASE)
     if pattern.search(sparql):

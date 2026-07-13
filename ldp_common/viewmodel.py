@@ -12,7 +12,7 @@ from rdflib import Literal as RDFLiteral
 from rdflib.namespace import XSD
 from rdflib.term import Node
 
-from ldp_common.vocab import (
+from ldp_common.vocabulary import (
     DC_description,
     DC_title,
     POD_constructTemplate,
@@ -40,6 +40,14 @@ def param_term(value: str, param_type: ParamTypeName) -> URIRef | RDFLiteral:
     query (portable ``VALUES`` binding) reproduces the same RDF term the non-standard
     initBindings path produced: ``date``/``dateTime`` bind as typed literals,
     absolute-IRI-shaped values as ``URIRef``\\ s, and everything else as plain literals.
+
+    Coercion keys on IRI *shape*, not the declared type, so a ``str``-typed value whose
+    lexical form matches an IRI scheme (e.g. ``tag:a b``) still becomes a ``URIRef``. When
+    such a value is not a serializable IRI, the portable path fails fast: ``.n3()`` raises
+    at bind time and surfaces as a 422 — whereas the legacy initBindings path bound it and
+    silently matched nothing. The fail-fast is intentional; ``bind_params`` eagerly
+    validates only the ``iri`` type, so this serialization step is what catches an
+    IRI-shaped ``str`` value.
     """
     datatype = _PARAM_DATATYPE.get(param_type)
     if datatype is not None:
@@ -118,6 +126,10 @@ def bind_params(decls: list[ParamDecl], raw: dict[str, str]) -> dict[str, str]:
                 _INT_ADAPTER.validate_python(value)
             except ValidationError as exc:
                 raise ValueError(f"Parameter {decl.name!r} must be an integer") from exc
+        # Only ``iri`` is checked for IRI serializability here. A ``str`` value that is
+        # merely IRI-shaped (e.g. ``tag:a b``) is coerced to a URIRef by ``param_term`` and,
+        # if unserializable, rejected later at term serialization (422) — a deliberate
+        # fail-fast, not the old initBindings "bind it and match nothing".
         elif decl.type == "iri" and (not _ABS_IRI.match(value) or _IRI_FORBIDDEN.search(value)):
             raise ValueError(f"Parameter {decl.name!r} must be an absolute IRI, got {value!r}")
         elif (

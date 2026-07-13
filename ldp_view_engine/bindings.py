@@ -20,14 +20,25 @@ class BindingError(ValueError):
     """A view template could not be parameterized with the supplied bindings."""
 
 
-def _scan_where_group(query: str) -> tuple[int | None, int | None]:
-    """Locate, ignoring strings/comments/IRIs, the first ``{`` and first ``WHERE`` keyword.
+def _scan_where_group(query: str) -> tuple[int | None, int | None, int | None]:
+    """Locate, ignoring strings/comments/IRIs, three tokens: the first ``{``, the first
+    ``WHERE`` keyword, and the first ``{`` at or after that keyword (the WHERE group's
+    opening brace).
 
-    Returns ``(first_brace_index, where_keyword_index)``; either may be ``None`` when the
-    query contains no such token outside a literal.
+    Returns ``(first_brace_index, where_keyword_index, where_brace_index)``; any may be
+    ``None`` when the query contains no such token outside a literal. Because the scan is
+    comment-aware, ``where_brace_index`` skips any ``{`` sitting inside a comment between
+    ``WHERE`` and its real group — a naive ``str.index('{')`` would land the injected
+    VALUES block inside that comment, silently leaving parameters unbound.
+
+    Name-ish tokens (``?``/``$`` variables, prefixed names, keywords) are consumed whole,
+    so ``WHERE`` is recognized only as a standalone keyword — never as a fragment of a
+    variable such as ``?where`` or a predicate such as ``ex:where``, which a bare
+    ``\\bWHERE\\b`` regex would corrupt.
     """
     first_brace: int | None = None
     where_at: int | None = None
+    where_brace: int | None = None
     i = 0
     n = len(query)
     while i < n:
@@ -55,15 +66,51 @@ def _scan_where_group(query: str) -> tuple[int | None, int | None]:
         if ch == "{":
             if first_brace is None:
                 first_brace = i
+            if where_at is not None and where_brace is None:
+                where_brace = i
             i += 1
             continue
-        if where_at is None and (ch in "wW") and query[i : i + 5].upper() == "WHERE":
-            before = query[i - 1] if i > 0 else " "
-            after = query[i + 5] if i + 5 < n else " "
-            if not before.isalnum() and before != "_" and not after.isalnum() and after != "_":
-                where_at = i
+        if ch.isalpha() or ch in "_?$:":
+            # Consume a whole name-ish token (keyword, ?/$ variable, or prefixed name) so
+            # a bare WHERE is matched only when it stands alone, not when it is the tail of
+            # ?where or ex:where — the ``\bWHERE\b`` regex failure this scan is built to avoid.
+            start = i
+            i += 1
+            while i < n and (query[i].isalnum() or query[i] in "_-.:"):
+                i += 1
+            if where_at is None and query[start:i].upper() == "WHERE":
+                where_at = start
+            continue
         i += 1
-    return first_brace, where_at
+    return first_brace, where_at, where_brace
+
+
+def find_where_keyword(query: str) -> int | None:
+    """Index of the query's top-level ``WHERE`` keyword, or ``None`` if it has none.
+
+    Shares ``inject_values``' string/comment/IRI-aware scan, so a ``WHERE`` inside a
+    literal or a comment, or the ``where`` in a variable such as ``?where``, is never
+    mistaken for the clause. Callers splice a dataset clause at this boundary without the
+    fragility of a bare ``\\bWHERE\\b`` regex.
+    """
+    return _scan_where_group(query)[1]
+
+
+def inject_values_block(query: str, block: str) -> str:
+    """Splice a prebuilt ``VALUES`` *block* as the first element of *query*'s WHERE group.
+
+    Shares ``inject_values``' string/comment/IRI-aware scan, so the block lands just
+    inside the real WHERE group's opening brace — never a ``{`` sitting in a literal or a
+    comment. This is how a caller binds a fixed variable (a token digest, say) over the
+    standard SPARQL protocol, which carries no ``initBindings``, without depending on the
+    query's exact byte layout. Raises :class:`BindingError` if *query* has no WHERE group.
+    """
+    _, where_at, group_open = _scan_where_group(query)
+    if where_at is None:
+        raise BindingError("query has no WHERE clause to bind")
+    if group_open is None:
+        raise BindingError("query WHERE clause has no group graph pattern")
+    return f"{query[: group_open + 1]} {block} {query[group_open + 1 :]}"
 
 
 def _group_bounds(query: str, open_brace: int) -> int:
@@ -134,22 +181,22 @@ def inject_values(template: str, bound: dict[str, str], decls: list[ParamDecl]) 
         return template
 
     block = _values_block(bound, decls)
-    first_brace, where_at = _scan_where_group(template)
+    first_brace, where_at, group_open = _scan_where_group(template)
     if where_at is None:
         raise BindingError("view template has no WHERE clause to parameterize")
+    if group_open is None:
+        raise BindingError("view template WHERE clause has no group graph pattern")
 
     if first_brace is None or where_at < first_brace:
         # CONSTRUCT WHERE { T } shorthand: the WHERE group is also the construct template.
         # Expand to the equivalent explicit form so the VALUES block has a home that is a
         # group graph pattern (the shorthand's body may only be a triples template).
-        group_open = template.index("{", where_at)
         group_close = _group_bounds(template, group_open)
         head = template[:where_at]
         body = template[group_open + 1 : group_close]
         tail = template[group_close + 1 :]
         rewritten = f"{head}{{{body}}} WHERE {{ {block} {body}}}{tail}"
     else:
-        group_open = template.index("{", where_at)
         rewritten = f"{template[: group_open + 1]} {block} {template[group_open + 1 :]}"
 
     try:

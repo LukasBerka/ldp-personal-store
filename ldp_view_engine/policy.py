@@ -7,7 +7,7 @@ from rdflib import Graph, URIRef
 
 from ldp_common.datetime import UNIX_EPOCH, parse_xsd_datetime
 from ldp_common.tokenrecord import TokenRecord
-from ldp_common.vocab import (
+from ldp_common.vocabulary import (
     POD_expiresAt,
     POD_maxRetrievals,
     POD_maxViewRetrievals,

@@ -12,17 +12,18 @@ engine; the data source carries its own configurable credential and namespace.
 """
 
 import base64
-import re
 
 import httpx
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import XSD
 
-from ldp_common.vocab import (
+from ldp_common.vocabulary import (
+    POD_TTL_PREFIX,
     POD_enforcementCount,
     POD_lastUsedAt,
     POD_viewRetrievalCount,
 )
+from ldp_view_engine.bindings import find_where_keyword
 
 # The engine bumps a shared counter with an optimistic conditional PUT; a concurrent
 # delivery that wins the race invalidates the ETag, so a bounded retry re-reads and
@@ -109,10 +110,23 @@ class StorageClient:
         ``FROM`` to that graph, and this reference server maps it onto its ``.system/``
         subtree. Queries without it evaluate over the data only, so view CONSTRUCTs can
         never see engine state.
+
+        Faithfulness caveat on the reference store: a strict SPARQL store answers
+        ``FROM <g>`` by *narrowing* the default graph to ``g`` alone, whereas this store
+        *widens* to the union of data and state (it strips the clause and evaluates with
+        ``include-system``; see ``_apply_state_scope`` in the SPARQL router). The two
+        coincide for every query the engine issues, because each selects on terms
+        (``pod:*`` types, token digests) that live only in the state records — but a query
+        joining state against data would diverge from a strict store.
+
+        The WHERE keyword is located with the same string/comment/IRI-aware scan
+        ``inject_values`` uses, so a ``WHERE`` inside a literal or a ``?where`` variable is
+        never mistaken for the clause. Raises ``ValueError`` if there is no WHERE to scope.
         """
-        return re.sub(
-            r"\bWHERE\b", f"FROM <{self._state_graph}> WHERE", sparql, count=1, flags=re.IGNORECASE
-        )
+        where_at = find_where_keyword(sparql)
+        if where_at is None:
+            raise ValueError("cannot state-scope a query with no WHERE clause")
+        return f"{sparql[:where_at]}FROM <{self._state_graph}> {sparql[where_at:]}"
 
     @staticmethod
     def _expect(response: httpx.Response, status_code: int) -> None:
@@ -247,8 +261,7 @@ class StorageClient:
     async def append_access_log(self, view_uri: str, token_uri: str, timestamp: str) -> None:
         """Append one delivery entry by POSTing it to the access-log LDP container."""
         body = (
-            "@prefix pod: <urn:pod:vocab:> .\n"
-            "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"
+            POD_TTL_PREFIX + "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"
             "<> a pod:AccessLogEntry ;\n"
             f"   pod:accessLogView <{view_uri}> ;\n"
             f"   pod:accessLogToken <{token_uri}> ;\n"

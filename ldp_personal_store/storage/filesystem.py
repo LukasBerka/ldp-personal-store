@@ -10,7 +10,7 @@ from rdflib.graph import ReadOnlyGraphAggregate
 from rdflib.namespace import RDF
 from rdflib.query import Result
 
-from ldp_common.vocab import DC_format, LDP_NonRDFSource
+from ldp_common.vocabulary import DC_format, LDP_NonRDFSource
 from ldp_personal_store.storage.backend import NotABinaryResource, ResourceNotFound, StorageError
 from ldp_personal_store.storage.system import (
     SYSTEM_SEGMENT,

@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from ldp_common.appkit import add_cors, add_health, install_openapi_security, run_uvicorn
 from ldp_common.config import check_tls_precondition, get_cors_settings, get_settings
-from ldp_common.vocab import make_engine_ns, make_system_ns
+from ldp_common.vocabulary import make_engine_ns, make_system_ns
 from ldp_view_engine import __version__
 from ldp_view_engine.client import StorageClient, UpstreamError
 from ldp_view_engine.discovery import router as discovery_router
@@ -88,7 +88,7 @@ _TAGS_METADATA = [
 ]
 
 app = FastAPI(
-    title="Personal LDP Pod — View Engine",
+    title="LDP Personal Store — View Engine",
     version=__version__,
     description=_DESCRIPTION,
     openapi_tags=_TAGS_METADATA,

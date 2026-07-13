@@ -2,8 +2,8 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
 from rdflib import Graph, URIRef
 from rdflib.namespace import RDF
 
@@ -32,7 +32,7 @@ from ldp_common.rdfcontent import (
     normalize_media_type,
     parse_rdf_body,
 )
-from ldp_common.vocab import (
+from ldp_common.vocabulary import (
     LDP_Container,
     LDP_contains,
     LDP_hasMemberRelation,
@@ -42,7 +42,7 @@ from ldp_common.vocab import (
     LDP_RDFSource,
     LDP_Resource,
 )
-from ldp_personal_store.auth.deps import get_admin_token, get_storage_token
+from ldp_personal_store.authentication.dependencies import get_admin_token, get_storage_token
 from ldp_personal_store.ldp.containers import (
     container_kind,
     container_link_types,
@@ -50,7 +50,7 @@ from ldp_personal_store.ldp.containers import (
     parent_container_uri,
 )
 from ldp_personal_store.ldp.content import binary_content_type
-from ldp_personal_store.ldp.deps import BackendDep, http_error
+from ldp_personal_store.ldp.dependencies import BackendDep, http_error
 from ldp_personal_store.storage.backend import (
     NotABinaryResource,
     ResourceNotFound,
@@ -72,6 +72,50 @@ _BINARY_LINK = link_header([LDP_Resource, LDP_NonRDFSource])
 def _binary_link(uri: str) -> str:
     """``Link`` header for the LDP-NR at *uri*."""
     return f'{_BINARY_LINK}, <{uri}.meta>; rel="describedby"; anchor="{uri}"'
+
+
+# LDP 4.2.1 requires a server to publish the constraints it enforces on writes and
+# to point at that description with an ldp:constrainedBy Link header on every write
+# it refuses for violating one. The pod serves that description at a stable,
+# pod-base-relative document and attaches the header on each such refusal.
+CONSTRAINTS_PATH = ".system/constraints"
+_CONSTRAINED_BY_REL = "http://www.w3.org/ns/ldp#constrainedBy"
+
+_CONSTRAINTS_DOCUMENT = """<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Pod write constraints</title></head>
+<body>
+<h1>Write constraints</h1>
+<p>A request that violates one of the rules below is refused, and the failing
+response carries a <code>Link</code> header with
+<code>rel="http://www.w3.org/ns/ldp#constrainedBy"</code> pointing at this
+document.</p>
+<ul>
+<li>Containment triples (<code>ldp:contains</code>) are server-managed: a
+<code>PUT</code> that adds, removes, or alters them is refused with 409.</li>
+<li>Membership triples are server-derived from containment and are synthesized
+only in responses; they are not accepted on write.</li>
+<li>Updating an existing resource requires a matching <code>If-Match</code> ETag:
+a blind update is refused with 428, a stale one with 412.</li>
+<li>A container that still holds members cannot be deleted until it is emptied
+(409).</li>
+</ul>
+</body>
+</html>
+"""
+
+
+def constrained_by_link(base_uri: str) -> str:
+    """``Link`` header value pointing at the pod's published write constraints."""
+    return f'<{base_uri.rstrip("/")}/{CONSTRAINTS_PATH}>; rel="{_CONSTRAINED_BY_REL}"'
+
+
+def add_constraints_route(app: FastAPI) -> None:
+    """Serve the public constraints document that ``constrained_by_link`` targets."""
+
+    @app.get(f"/{CONSTRAINTS_PATH}", include_in_schema=False)
+    def constraints_document() -> HTMLResponse:
+        return HTMLResponse(_CONSTRAINTS_DOCUMENT)
 
 
 # OpenAPI
@@ -330,6 +374,7 @@ def _put_rdf_resource(
                 raise HTTPException(
                     status_code=409,
                     detail="PUT must not modify server-managed containment triples",
+                    headers={"Link": constrained_by_link(base_uri)},
                 )
         # ldp:contains is server-managed: discard any client-supplied containment.
         graph.remove((None, LDP_contains, None))
@@ -669,7 +714,10 @@ def delete_resource(path: str, backend: BackendDep, settings: SettingsDep) -> Re
         and container_kind(target, uri) is not None
         and next(target.objects(URIRef(uri), LDP_contains), None) is not None
     ):
-        raise HTTPException(status_code=409)
+        raise HTTPException(
+            status_code=409,
+            headers={"Link": constrained_by_link(settings.base_uri)},
+        )
     try:
         backend.delete(uri)
     except StorageError as exc:

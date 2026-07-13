@@ -13,7 +13,7 @@ from rdflib.namespace import RDF, XSD
 from rdflib.plugins.sparql.parser import parseQuery
 
 from ldp_common.viewmodel import ParamDecl, _value_str
-from ldp_common.vocab import (
+from ldp_common.vocabulary import (
     DC_description,
     DC_title,
     POD_constructTemplate,

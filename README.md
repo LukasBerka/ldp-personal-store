@@ -66,6 +66,25 @@ state persists in the named volume `pod-data` mounted at `/data`. `LDP_ADMIN_TOK
 be provided through the compose environment (host environment or an `.env` file); the
 container refuses to start without it and never writes the plaintext to the log.
 
+### Split deployment
+
+The compose file also defines a **`split` profile** that runs the view engine and the
+storage server as separate containers behind a reverse proxy (Caddy), communicating only
+over the standard LDP + SPARQL 1.1 contract — the same topology a production deployment
+would use to place the engine in front of a third-party store:
+
+```sh
+LDP_ADMIN_TOKEN=<secret> LDP_ENGINE_TOKEN=<secret> \
+  docker compose --profile split up --build
+```
+
+Here `LDP_ENGINE_TOKEN` is the credential the engine presents to storage; the compose file
+seeds it on both containers, so it must be provided. The proxy publishes one canonical base
+(`LDP_BASE_URI`) and routes the consumer surface (`/.engine/*`) to the engine and everything
+else to storage, so the record URIs storage mints and the proxy URLs the engine emits share
+one base. See the comments in `docker-compose.yml` and the "Split-deployment settings" table
+under [Configuration](#configuration) for the full set of knobs.
+
 ## Configuration
 
 Every setting except the admin token has a working default and is read from an
@@ -84,6 +103,22 @@ required — the pod refuses to start without it.**
 | `LDP_ADMIN_TOKEN` | **required** | The pod owner's plaintext admin credential. The pod refuses to start without it; only its SHA-256 hash is persisted and the plaintext is never logged. Choose a long random value (e.g. `openssl rand -base64 32`). |
 | `LDP_RELOAD` | `false` | Dev-only autoreload file-watcher. |
 | `LDP_CORS_ALLOW_ORIGINS` | `*` | Comma-separated browser origins allowed to read the pod cross-origin (CORS), or `*` for any. `*` is a safe default here because auth is a bearer token in the `Authorization` header, never a cookie — see below. |
+
+**Split-deployment settings.** By default the view engine and storage server run in one
+process, reaching each other over an in-process ASGI transport — the same HTTP surface a
+split deployment would reach over the network. The settings below only take effect when the
+engine and storage run as **separate processes** (see "Run with Docker" for the compose
+profile that does this); the bundled single-process pod leaves them all at their defaults.
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `LDP_ENGINE_TOKEN` | fresh per boot | Plaintext credential the view engine presents to storage on the engine→storage boundary; only its SHA-256 hash is persisted. Unset (bundled), a new token is minted each startup and kept in process memory; set the **same** value on the engine and the storage server when they run as separate processes. |
+| `LDP_STORAGE_URL` | in-process | Base URL of the upstream storage server holding the engine's state records. Unset (bundled), the engine reaches storage over an in-process ASGI transport (same surface, no socket); set it to run the engine against a storage server listening elsewhere (loopback or remote). |
+| `LDP_STATE_GRAPH` | `urn:ldp:engine-state` | Named graph holding the engine's operating state (token/view/policy records and the access log), kept out of view-CONSTRUCT scope. A stable logical name the engine and store agree on; this server realizes it as its reserved `.system/` subtree. |
+| `LDP_DATA_SOURCE_URL` | `LDP_STORAGE_URL` | The store the engine queries for view CONSTRUCTs and binary reads, as opposed to the state store above. Unset, it is co-located with the state store; set it to point the engine at a separate SPARQL/LDP data source (e.g. a third-party store). |
+| `LDP_DATA_SOURCE_BASE_URI` | `LDP_BASE_URI` | The namespace data-source resources carry — the "upstream" URIs the engine rewrites into gated proxy URLs and guards the blob endpoint against. Unset, it matches the engine's own public base. |
+| `LDP_DATA_SOURCE_TOKEN` | `LDP_ENGINE_TOKEN` | Credential the engine presents to the data source. Unset, it reuses the engine token (co-located: same credential as the state store). |
+| `LDP_DATA_SOURCE_AUTH` | `bearer` | Auth scheme the engine uses against the data source: `bearer` \| `basic` (`LDP_DATA_SOURCE_TOKEN` as `user:password`) \| `none`. |
 
 **TLS precondition.** For any non-loopback `host`, `tls_mode` must be `required`
 (uvicorn-native TLS) or `terminated` (TLS ended at a trusted reverse proxy upstream),

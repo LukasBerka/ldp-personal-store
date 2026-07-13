@@ -14,10 +14,10 @@ from ldp_common.apidocs import (
     turtle_response,
 )
 from ldp_common.rdfcontent import RDF_CONTENT_TYPES, parse_rdf_body
-from ldp_common.vocab import POD_EngineToken, POD_viewRetrievalCount
-from ldp_personal_store.auth.deps import StorageTokenDep, get_admin_token
+from ldp_common.vocabulary import POD_TTL_PREFIX, POD_EngineToken, POD_viewRetrievalCount
+from ldp_personal_store.authentication.dependencies import StorageTokenDep, get_admin_token
 from ldp_personal_store.ldp.containers import sanitize_slug
-from ldp_personal_store.ldp.deps import BackendDep, RawBodyDep
+from ldp_personal_store.ldp.dependencies import BackendDep, RawBodyDep
 from ldp_personal_store.storage.backend import ResourceNotFound, StorageBackend
 from ldp_personal_store.storage.router import apply_enforcement_put, guard_enforcement_put
 from ldp_personal_store.views.submission import (
@@ -46,8 +46,7 @@ _VIEW_BODY = rdf_request_body(
     "RDF terms, never spliced into the query text. An `int` value still binds as a plain "
     "literal, so templates should coerce explicitly (e.g. `FILTER(xsd:integer(?n) > 5)`); "
     "`date` and `dateTime` bind as typed literals and compare directly.",
-    "@prefix pod: <urn:pod:vocab:> .\n"
-    "@prefix dcterms: <http://purl.org/dc/terms/> .\n\n"
+    POD_TTL_PREFIX + "@prefix dcterms: <http://purl.org/dc/terms/> .\n\n"
     "[] a pod:View ;\n"
     '    dcterms:title "Reading list" ;\n'
     '    dcterms:description "Public books, filtered by author" ;\n'

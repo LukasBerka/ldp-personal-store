@@ -6,9 +6,9 @@ from fastapi import Depends
 
 from ldp_common.http import require_bearer
 from ldp_common.tokenrecord import TokenRecord
-from ldp_common.vocab import POD_AdminToken, POD_EngineToken
-from ldp_personal_store.auth.tokens_store import validate_token, validate_token_one_of
-from ldp_personal_store.ldp.deps import BackendDep
+from ldp_common.vocabulary import POD_AdminToken, POD_EngineToken
+from ldp_personal_store.authentication.tokens_store import validate_token, validate_token_one_of
+from ldp_personal_store.ldp.dependencies import BackendDep
 
 __all__ = [
     "AdminTokenDep",

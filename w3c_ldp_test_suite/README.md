@@ -66,15 +66,20 @@ URL, so the harness runs it twice:
   `--non-rdf` for the LDP Non-RDF Source (binary) group.
 - **Direct** against a `tck-direct/` container the harness PUTs first.
 - **Indirect** is intentionally skipped — the pod implements only Basic and Direct
-  Containers (`app/ldp/containers.py`). Report this as an unimplemented feature,
-  not a failure.
+  Containers (`ldp_personal_store/ldp/containers.py`). Report this as an
+  unimplemented feature, not a failure.
+
+Both legs pass `--read-only-prop http://www.w3.org/ns/ldp#contains`, naming a
+server-managed property so the suite runs its constraint-publishing tests: the pod
+refuses a `PUT` that touches containment and advertises the constraint with an
+`ldp:constrainedBy` `Link` header pointing at `/.system/constraints`. Without the
+flag the suite skips those tests instead.
 
 ## Expected findings (not harness bugs)
 
 Some `MUST`/`SHOULD` assertions are expected to fail because the pod does not
 implement those parts of LDP. These are legitimate conformance findings, e.g.:
 
-- No `Accept-Post` header on container responses (LDP MUST for POST support).
 - No `PATCH` / `Accept-Patch` support.
 - No paging.
 

@@ -1,0 +1,222 @@
+@prefix pod:     <https://lukasberka.github.io/ldp-personal-store/vocab#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+#################################################################
+#    Ontology
+#################################################################
+
+<https://lukasberka.github.io/ldp-personal-store/vocab> a owl:Ontology ;
+    dcterms:title       "LDP Personal Store vocabulary" ;
+    dcterms:description """The RDF vocabulary the LDP Personal Store uses for its own
+        records: bearer-token grants, SPARQL CONSTRUCT view definitions, access
+        policies, and access-log entries. All instances live under the pod's
+        reserved .system/ subtree.""" ;
+    dcterms:creator     "Lukáš Berka" ;
+    owl:versionInfo     "1.0" ;
+    rdfs:seeAlso        <https://github.com/LukasBerka/ldp-personal-store> .
+
+#################################################################
+#    Classes
+#################################################################
+
+pod:Token a rdfs:Class ;
+    rdfs:label      "Token" ;
+    rdfs:comment    "Common supertype of the pod's bearer-token records." ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:ConsumerToken a rdfs:Class ;
+    rdfs:label      "Consumer token" ;
+    rdfs:comment    "A data consumer's bearer token; reaches the engine surface only." ;
+    rdfs:subClassOf pod:Token ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:AdminToken a rdfs:Class ;
+    rdfs:label      "Admin token" ;
+    rdfs:comment    "The pod owner's administrative token; full management surface." ;
+    rdfs:subClassOf pod:Token ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:EngineToken a rdfs:Class ;
+    rdfs:label      "Engine token" ;
+    rdfs:comment    "The view engine's own storage credential on the engine-to-storage request path." ;
+    rdfs:subClassOf pod:Token ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:View a rdfs:Class ;
+    rdfs:label      "View" ;
+    rdfs:comment    "A named, parameterized SPARQL CONSTRUCT view definition." ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:Policy a rdfs:Class ;
+    rdfs:label      "Policy" ;
+    rdfs:comment    "The access policy governing a single grant." ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:AccessLogEntry a rdfs:Class ;
+    rdfs:label      "Access-log entry" ;
+    rdfs:comment    "One recorded successful delivery of a view to a consumer." ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+#################################################################
+#    Token properties
+#################################################################
+
+pod:tokenHash a rdf:Property ;
+    rdfs:label      "token hash" ;
+    rdfs:comment    "SHA-256 hex digest of the bearer token; the token value itself is never stored." ;
+    rdfs:domain     pod:Token ;
+    rdfs:range      xsd:string ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:tokenSecret a rdf:Property ;
+    rdfs:label      "token secret" ;
+    rdfs:comment    "The plaintext bearer token, surfaced once in the issuance response and never persisted to a record." ;
+    rdfs:domain     pod:Token ;
+    rdfs:range      xsd:string ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:linkedView a rdf:Property ;
+    rdfs:label      "linked view" ;
+    rdfs:comment    "A view this grant unlocks; one statement per unlocked view." ;
+    rdfs:domain     pod:Token ;
+    rdfs:range      pod:View ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:policyRef a rdf:Property ;
+    rdfs:label      "policy reference" ;
+    rdfs:comment    "The policy resource governing this grant." ;
+    rdfs:domain     pod:Token ;
+    rdfs:range      pod:Policy ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:enforcementCount a rdf:Property ;
+    rdfs:label      "enforcement count" ;
+    rdfs:comment    "Number of successful deliveries under this grant; updated after each delivery." ;
+    rdfs:domain     pod:Token ;
+    rdfs:range      xsd:integer ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:lastUsedAt a rdf:Property ;
+    rdfs:label      "last used at" ;
+    rdfs:comment    "Instant of the last successful delivery under this grant; updated after each delivery." ;
+    rdfs:domain     pod:Token ;
+    rdfs:range      xsd:dateTime ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+#################################################################
+#    View properties
+#################################################################
+
+pod:constructTemplate a rdf:Property ;
+    rdfs:label      "construct template" ;
+    rdfs:comment    "The SPARQL CONSTRUCT template; the sole filter on what the view exposes." ;
+    rdfs:domain     pod:View ;
+    rdfs:range      xsd:string ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:contentTypeHint a rdf:Property ;
+    rdfs:label      "content-type hint" ;
+    rdfs:comment    "Suggested response media type for the view's result serialization." ;
+    rdfs:domain     pod:View ;
+    rdfs:range      xsd:string ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:parameter a rdf:Property ;
+    rdfs:label      "parameter" ;
+    rdfs:comment    "A consumer-suppliable parameter of the view, carrying pod:paramName and pod:paramType." ;
+    rdfs:domain     pod:View ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:paramName a rdf:Property ;
+    rdfs:label      "parameter name" ;
+    rdfs:comment    "The SPARQL variable name a parameter binds (without the leading '?')." ;
+    rdfs:range      xsd:string ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:paramType a rdf:Property ;
+    rdfs:label      "parameter type" ;
+    rdfs:comment    "A parameter's value type: one of 'str', 'int', 'iri', 'date', or 'dateTime'." ;
+    rdfs:range      xsd:string ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+#################################################################
+#    Policy properties
+#################################################################
+
+pod:expiresAt a rdf:Property ;
+    rdfs:label      "expires at" ;
+    rdfs:comment    "The grant is invalid once the current time is past this instant." ;
+    rdfs:domain     pod:Policy ;
+    rdfs:range      xsd:dateTime ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:validFrom a rdf:Property ;
+    rdfs:label      "valid from" ;
+    rdfs:comment    "Inclusive lower bound of the grant's validity window." ;
+    rdfs:domain     pod:Policy ;
+    rdfs:range      xsd:dateTime ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:validUntil a rdf:Property ;
+    rdfs:label      "valid until" ;
+    rdfs:comment    "Inclusive upper bound of the grant's validity window." ;
+    rdfs:domain     pod:Policy ;
+    rdfs:range      xsd:dateTime ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:maxRetrievals a rdf:Property ;
+    rdfs:label      "maximum retrievals" ;
+    rdfs:comment    "Per-grant ceiling on the number of successful deliveries." ;
+    rdfs:domain     pod:Policy ;
+    rdfs:range      xsd:integer ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:minInterval a rdf:Property ;
+    rdfs:label      "minimum interval" ;
+    rdfs:comment    "Minimum number of seconds between consecutive deliveries under the grant." ;
+    rdfs:domain     pod:Policy ;
+    rdfs:range      xsd:integer ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:maxViewRetrievals a rdf:Property ;
+    rdfs:label      "maximum view retrievals" ;
+    rdfs:comment    "Per-view ceiling on successful deliveries, shared across every grant that unlocks the view." ;
+    rdfs:domain     pod:View ;
+    rdfs:range      xsd:integer ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:viewRetrievalCount a rdf:Property ;
+    rdfs:label      "view retrieval count" ;
+    rdfs:comment    "Mutable count of successful deliveries of the view across all grants." ;
+    rdfs:domain     pod:View ;
+    rdfs:range      xsd:integer ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+#################################################################
+#    Access-log properties
+#################################################################
+
+pod:accessLogView a rdf:Property ;
+    rdfs:label      "access-log view" ;
+    rdfs:comment    "The view that was served in the recorded delivery." ;
+    rdfs:domain     pod:AccessLogEntry ;
+    rdfs:range      pod:View ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:accessLogToken a rdf:Property ;
+    rdfs:label      "access-log token" ;
+    rdfs:comment    "The token that authorized the recorded delivery." ;
+    rdfs:domain     pod:AccessLogEntry ;
+    rdfs:range      pod:Token ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .
+
+pod:accessLogTimestamp a rdf:Property ;
+    rdfs:label      "access-log timestamp" ;
+    rdfs:comment    "The instant the recorded delivery was served." ;
+    rdfs:domain     pod:AccessLogEntry ;
+    rdfs:range      xsd:dateTime ;
+    rdfs:isDefinedBy <https://lukasberka.github.io/ldp-personal-store/vocab> .

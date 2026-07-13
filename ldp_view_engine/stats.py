@@ -2,21 +2,22 @@
 
 from pydantic import BaseModel
 
+from ldp_common.vocabulary import POD_SPARQL_PREFIX
 from ldp_view_engine.client import StorageClient
 
-# The POD vocabulary is a fixed urn: namespace, never derived from the pod's base URI.
+# The POD vocabulary is a fixed namespace, never derived from the pod's base URI.
 _TOTAL_SPARQL = (
-    "PREFIX pod: <urn:pod:vocab:> SELECT (COUNT(?e) AS ?total) WHERE { ?e a pod:AccessLogEntry }"
+    f"{POD_SPARQL_PREFIX} SELECT (COUNT(?e) AS ?total) WHERE {{ ?e a pod:AccessLogEntry }}"
 )
 _BY_VIEW_SPARQL = (
-    "PREFIX pod: <urn:pod:vocab:> "
+    f"{POD_SPARQL_PREFIX} "
     "SELECT ?view (COUNT(?e) AS ?count) (MAX(?ts) AS ?last) "
     "WHERE { ?e a pod:AccessLogEntry ; pod:accessLogView ?view ; "
     "pod:accessLogTimestamp ?ts } "
     "GROUP BY ?view ORDER BY DESC(?count)"
 )
 _BY_TOKEN_SPARQL = (
-    "PREFIX pod: <urn:pod:vocab:> "
+    f"{POD_SPARQL_PREFIX} "
     "SELECT ?token (COUNT(?e) AS ?count) "
     "WHERE { ?e a pod:AccessLogEntry ; pod:accessLogToken ?token } "
     "GROUP BY ?token ORDER BY DESC(?count)"

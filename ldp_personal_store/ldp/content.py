@@ -4,7 +4,7 @@
 
 from rdflib.term import Variable
 
-from ldp_common.vocab import DC_format
+from ldp_common.vocabulary import DC_format
 from ldp_personal_store.storage.backend import StorageBackend
 
 

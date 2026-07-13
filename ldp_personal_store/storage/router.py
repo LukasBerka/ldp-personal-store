@@ -24,7 +24,7 @@ from rdflib.namespace import RDF, XSD
 from ldp_common.apidocs import STORAGE_AUTH, UNAUTHORIZED, Responses
 from ldp_common.datetime import parse_xsd_datetime
 from ldp_common.rdfcontent import check_preconditions, etag_for_graph, parse_rdf_body
-from ldp_common.vocab import (
+from ldp_common.vocabulary import (
     POD_AccessLogEntry,
     POD_accessLogTimestamp,
     POD_accessLogToken,
@@ -32,8 +32,8 @@ from ldp_common.vocab import (
     POD_enforcementCount,
     POD_lastUsedAt,
 )
-from ldp_personal_store.auth.deps import StorageTokenDep
-from ldp_personal_store.ldp.deps import BackendDep, RawBodyDep
+from ldp_personal_store.authentication.dependencies import StorageTokenDep
+from ldp_personal_store.ldp.dependencies import BackendDep, RawBodyDep
 from ldp_personal_store.storage.backend import ResourceNotFound, StorageBackend
 
 router = APIRouter(prefix="/.system", tags=["system-internal"])

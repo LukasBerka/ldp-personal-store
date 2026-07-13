@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LDP Personal Store vocabulary</title>
+<link rel="alternate" type="text/turtle" href="vocab.ttl">
+<style>
+  :root { color-scheme: light dark; --fg:#1a1a1a; --bg:#ffffff; --muted:#666; --border:#e2e2e2; --code:#f4f4f5; --accent:#2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e6e6e6; --bg:#141414; --muted:#9a9a9a; --border:#2c2c2c; --code:#1f1f22; --accent:#7aa2f7; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:2rem 1.25rem 4rem; font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); }
+  main { max-width: 60rem; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin:.2rem 0 .4rem; }
+  h2 { font-size:1.25rem; margin:2.4rem 0 .6rem; border-bottom:1px solid var(--border); padding-bottom:.3rem; }
+  h3 { font-size:1.02rem; margin:1.6rem 0 .5rem; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+  a { color: var(--accent); }
+  code { background:var(--code); padding:.08em .35em; border-radius:4px; font:.86em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .lead { color:var(--muted); max-width:48rem; }
+  dl.meta { display:grid; grid-template-columns:auto 1fr; gap:.2rem 1rem; margin:1rem 0 0; font-size:.92rem; }
+  dl.meta dt { color:var(--muted); }
+  dl.meta dd { margin:0; }
+  dl.meta code { word-break:break-all; }
+  .tablewrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; margin:.3rem 0 .5rem; font-size:.92rem; }
+  th,td { text-align:left; vertical-align:top; padding:.5rem .6rem; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; white-space:nowrap; }
+  td code { white-space:nowrap; }
+  tr:target { background:color-mix(in srgb, var(--accent) 14%, transparent); }
+  footer { margin-top:3rem; color:var(--muted); font-size:.85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>LDP Personal Store vocabulary</h1>
+  <p class="lead">The RDF vocabulary the LDP Personal Store uses for its own records: bearer-token grants, SPARQL CONSTRUCT view definitions, access policies, and access-log entries. All instances live under the pod&#x27;s reserved .system/ subtree.</p>
+  <dl class="meta">
+    <dt>Namespace</dt><dd><code>https://lukasberka.github.io/ldp-personal-store/vocab#</code></dd>
+    <dt>Preferred prefix</dt><dd><code>pod:</code></dd>
+    <dt>Version</dt><dd>1.0</dd>
+    <dt>Author</dt><dd>Lukáš Berka</dd>
+    <dt>Serializations</dt><dd><a href="vocab.ttl">Turtle</a></dd>
+    <dt>Source</dt><dd><a href="https://github.com/LukasBerka/ldp-personal-store">github.com/LukasBerka/ldp-personal-store</a></dd>
+  </dl>
+
+  <h2>Classes</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Term</th><th>Label</th><th>Description</th><th>Subclass of</th></tr></thead>
+    <tbody>
+<tr id="AccessLogEntry"><td><code>pod:AccessLogEntry</code></td><td>Access-log entry</td><td>One recorded successful delivery of a view to a consumer.</td><td>—</td></tr><tr id="AdminToken"><td><code>pod:AdminToken</code></td><td>Admin token</td><td>The pod owner&#x27;s administrative token; full management surface.</td><td>pod:Token</td></tr><tr id="ConsumerToken"><td><code>pod:ConsumerToken</code></td><td>Consumer token</td><td>A data consumer&#x27;s bearer token; reaches the engine surface only.</td><td>pod:Token</td></tr><tr id="EngineToken"><td><code>pod:EngineToken</code></td><td>Engine token</td><td>The view engine&#x27;s own storage credential on the engine-to-storage request path.</td><td>pod:Token</td></tr><tr id="Policy"><td><code>pod:Policy</code></td><td>Policy</td><td>The access policy governing a single grant.</td><td>—</td></tr><tr id="Token"><td><code>pod:Token</code></td><td>Token</td><td>Common supertype of the pod&#x27;s bearer-token records.</td><td>—</td></tr><tr id="View"><td><code>pod:View</code></td><td>View</td><td>A named, parameterized SPARQL CONSTRUCT view definition.</td><td>—</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Properties</h2>
+  <div class="tablewrap">
+<h3>Token properties</h3>
+<table>
+<thead><tr><th>Term</th><th>Label</th><th>Description</th><th>Range</th></tr></thead>
+<tbody>
+<tr id="enforcementCount"><td><code>pod:enforcementCount</code></td><td>enforcement count</td><td>Number of successful deliveries under this grant; updated after each delivery.</td><td><code>xsd:integer</code></td></tr><tr id="lastUsedAt"><td><code>pod:lastUsedAt</code></td><td>last used at</td><td>Instant of the last successful delivery under this grant; updated after each delivery.</td><td><code>xsd:dateTime</code></td></tr><tr id="linkedView"><td><code>pod:linkedView</code></td><td>linked view</td><td>A view this grant unlocks; one statement per unlocked view.</td><td><code>pod:View</code></td></tr><tr id="policyRef"><td><code>pod:policyRef</code></td><td>policy reference</td><td>The policy resource governing this grant.</td><td><code>pod:Policy</code></td></tr><tr id="tokenHash"><td><code>pod:tokenHash</code></td><td>token hash</td><td>SHA-256 hex digest of the bearer token; the token value itself is never stored.</td><td><code>xsd:string</code></td></tr><tr id="tokenSecret"><td><code>pod:tokenSecret</code></td><td>token secret</td><td>The plaintext bearer token, surfaced once in the issuance response and never persisted to a record.</td><td><code>xsd:string</code></td></tr>
+</tbody></table>
+<h3>View properties</h3>
+<table>
+<thead><tr><th>Term</th><th>Label</th><th>Description</th><th>Range</th></tr></thead>
+<tbody>
+<tr id="constructTemplate"><td><code>pod:constructTemplate</code></td><td>construct template</td><td>The SPARQL CONSTRUCT template; the sole filter on what the view exposes.</td><td><code>xsd:string</code></td></tr><tr id="contentTypeHint"><td><code>pod:contentTypeHint</code></td><td>content-type hint</td><td>Suggested response media type for the view&#x27;s result serialization.</td><td><code>xsd:string</code></td></tr><tr id="maxViewRetrievals"><td><code>pod:maxViewRetrievals</code></td><td>maximum view retrievals</td><td>Per-view ceiling on successful deliveries, shared across every grant that unlocks the view.</td><td><code>xsd:integer</code></td></tr><tr id="parameter"><td><code>pod:parameter</code></td><td>parameter</td><td>A consumer-suppliable parameter of the view, carrying pod:paramName and pod:paramType.</td><td><code>—</code></td></tr><tr id="viewRetrievalCount"><td><code>pod:viewRetrievalCount</code></td><td>view retrieval count</td><td>Mutable count of successful deliveries of the view across all grants.</td><td><code>xsd:integer</code></td></tr>
+</tbody></table>
+<h3>Policy properties</h3>
+<table>
+<thead><tr><th>Term</th><th>Label</th><th>Description</th><th>Range</th></tr></thead>
+<tbody>
+<tr id="expiresAt"><td><code>pod:expiresAt</code></td><td>expires at</td><td>The grant is invalid once the current time is past this instant.</td><td><code>xsd:dateTime</code></td></tr><tr id="maxRetrievals"><td><code>pod:maxRetrievals</code></td><td>maximum retrievals</td><td>Per-grant ceiling on the number of successful deliveries.</td><td><code>xsd:integer</code></td></tr><tr id="minInterval"><td><code>pod:minInterval</code></td><td>minimum interval</td><td>Minimum number of seconds between consecutive deliveries under the grant.</td><td><code>xsd:integer</code></td></tr><tr id="validFrom"><td><code>pod:validFrom</code></td><td>valid from</td><td>Inclusive lower bound of the grant&#x27;s validity window.</td><td><code>xsd:dateTime</code></td></tr><tr id="validUntil"><td><code>pod:validUntil</code></td><td>valid until</td><td>Inclusive upper bound of the grant&#x27;s validity window.</td><td><code>xsd:dateTime</code></td></tr>
+</tbody></table>
+<h3>Access-log entry properties</h3>
+<table>
+<thead><tr><th>Term</th><th>Label</th><th>Description</th><th>Range</th></tr></thead>
+<tbody>
+<tr id="accessLogTimestamp"><td><code>pod:accessLogTimestamp</code></td><td>access-log timestamp</td><td>The instant the recorded delivery was served.</td><td><code>xsd:dateTime</code></td></tr><tr id="accessLogToken"><td><code>pod:accessLogToken</code></td><td>access-log token</td><td>The token that authorized the recorded delivery.</td><td><code>pod:Token</code></td></tr><tr id="accessLogView"><td><code>pod:accessLogView</code></td><td>access-log view</td><td>The view that was served in the recorded delivery.</td><td><code>pod:View</code></td></tr>
+</tbody></table>
+<h3>Parameter node properties</h3>
+<table>
+<thead><tr><th>Term</th><th>Label</th><th>Description</th><th>Range</th></tr></thead>
+<tbody>
+<tr id="paramName"><td><code>pod:paramName</code></td><td>parameter name</td><td>The SPARQL variable name a parameter binds (without the leading &#x27;?&#x27;).</td><td><code>xsd:string</code></td></tr><tr id="paramType"><td><code>pod:paramType</code></td><td>parameter type</td><td>A parameter&#x27;s value type: one of &#x27;str&#x27;, &#x27;int&#x27;, &#x27;iri&#x27;, &#x27;date&#x27;, or &#x27;dateTime&#x27;.</td><td><code>xsd:string</code></td></tr>
+</tbody></table>
+
+  </div>
+
+  <footer>
+    Machine-readable definition: <a href="vocab.ttl">vocab.ttl</a>.
+    This document is the dereferenceable home of every <code>pod:</code> term used by the LDP Personal Store.
+  </footer>
+</main>
+</body>
+</html>

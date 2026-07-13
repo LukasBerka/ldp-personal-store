@@ -14,7 +14,8 @@ from ldp_common.tokenrecord import (
     token_record_from_graph,
     unauthorized,
 )
-from ldp_common.vocab import POD_AdminToken, POD_ConsumerToken
+from ldp_common.vocabulary import POD_AdminToken, POD_ConsumerToken
+from ldp_view_engine.bindings import inject_values_block
 from ldp_view_engine.client import StorageClient, UpstreamNotFound
 
 
@@ -34,9 +35,11 @@ async def validate_via_storage(
     presented_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     # The digest binds through a standard VALUES block (a SHA-256 hex string, so free of
     # any character that could escape the literal) and the lookup is scoped to the state
-    # graph — no binding-* or include-system extension on the wire.
-    bound_lookup = LOOKUP_QUERY.replace(
-        "WHERE {", f'WHERE {{ VALUES (?presented) {{ ("{presented_hash}") }}', 1
+    # graph — no binding-* or include-system extension on the wire. The block is spliced by
+    # the same WHERE-group scan the view engine uses, so it never depends on LOOKUP_QUERY's
+    # exact byte layout the way a bare ``.replace("WHERE {", …)`` would.
+    bound_lookup = inject_values_block(
+        LOOKUP_QUERY, f'VALUES (?presented) {{ ("{presented_hash}") }}'
     )
     rows = await storage.select_state(storage.state_scoped(bound_lookup))
     token_uri, matched_type = match_token_rows(rows, presented_hash, (required_type,))

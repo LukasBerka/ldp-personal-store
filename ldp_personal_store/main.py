@@ -1,4 +1,4 @@
-"""The bundled Personal LDP Pod: the view engine and reference storage in one process.
+"""The bundled LDP Personal Store: the view engine and reference storage in one process.
 
 This composition root mounts both surfaces' routers on a single FastAPI app and wires the
 engine's storage client to that same app over an in-process ASGI transport — the identical
@@ -22,11 +22,15 @@ from ldp_common.config import (
     get_settings,
     require_admin_token,
 )
-from ldp_common.vocab import make_engine_ns, make_system_ns
+from ldp_common.vocabulary import make_engine_ns, make_system_ns
 from ldp_personal_store import __version__
-from ldp_personal_store.auth.router import router as system_router
-from ldp_personal_store.auth.tokens_store import bootstrap_admin_token, bootstrap_engine_token
+from ldp_personal_store.authentication.router import router as system_router
+from ldp_personal_store.authentication.tokens_store import (
+    bootstrap_admin_token,
+    bootstrap_engine_token,
+)
 from ldp_personal_store.bootstrap import init_root_container
+from ldp_personal_store.ldp.router import add_constraints_route
 from ldp_personal_store.ldp.router import router as ldp_router
 from ldp_personal_store.sparql.router import router as sparql_router
 from ldp_personal_store.storage.filesystem import FilesystemBackend
@@ -114,7 +118,8 @@ policies, the access log — is an RDF resource. RDF request and response bodies
 exchanged in four serializations, negotiated via `Content-Type` / `Accept`:
 `text/turtle` (default), `application/ld+json`, `application/n-triples`,
 `application/rdf+xml`. Any other `Content-Type` on a write stores the body as an opaque
-binary. The system vocabulary uses the prefix `pod:` = `urn:pod:vocab:`;
+binary. The system vocabulary uses the prefix `pod:` =
+`https://lukasberka.github.io/ldp-personal-store/vocab#`;
 `dcterms:` = `http://purl.org/dc/terms/`; `ldp:` = `http://www.w3.org/ns/ldp#`.
 
 ## Owner workflow
@@ -205,7 +210,7 @@ _TAGS_METADATA = [
 ]
 
 app = FastAPI(
-    title="Personal LDP Pod",
+    title="LDP Personal Store",
     version=__version__,
     description=_API_DESCRIPTION,
     openapi_tags=_TAGS_METADATA,
@@ -215,6 +220,7 @@ app = FastAPI(
 add_cors(app, get_cors_settings())
 install_openapi_security(app)
 add_health(app, __version__)
+add_constraints_route(app)
 
 
 @app.exception_handler(UpstreamError)
