@@ -55,7 +55,7 @@ To simulate the week's churn:
 ```bash
 sed "s|http://localhost:8000|$BASE|g" test_data/uc4-shopping/list-week2.ttl | \
   curl -X PUT "$BASE/shopping/list" -H "Authorization: Bearer $ADMIN" \
-       -H "Content-Type: text/turtle" --data-binary @-
+       -H "Content-Type: text/turtle" -H "If-Match: *" --data-binary @-
 ```
 then re-fetch: milk/tomatoes are done, bread and dish soap are gone, butter and
 penne appear — same token, no reconfiguration.
@@ -77,8 +77,11 @@ token). Each fetch also appears as an entry under `/.system/access-log/`.
 
 Negative checks that hold everywhere: a consumer token gets 401 on the storage
 surface (e.g. `GET /calendar/work/standup`), 403 on a view it is not linked to
-(e.g. `FAMILY_TOKEN` on `schedule`), and 422 on a missing/ill-typed parameter
-(e.g. `schedule` without `calendar`).
+(e.g. `FAMILY_TOKEN` on `schedule`), and 422 on an ill-typed parameter value
+(e.g. `lecture-notes` with a non-IRI `lecture`). An *omitted* parameter is not
+an error: it leaves the query variable unbound, so the result is simply not
+narrowed on that axis (`schedule` without `calendar` returns all calendars'
+events).
 
 ## Layout
 

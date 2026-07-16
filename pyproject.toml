@@ -1,7 +1,7 @@
 [project]
 name = "ldp_personal_store"
 version = "0.1.0"
-description = "Personal LDP pod: share query-defined slices of your data under revocable, policy-bounded credentials"
+description = "LDP personal store: share query-defined slices of your data under revocable, policy-bounded credentials"
 readme = "README.md"
 authors = [
     { name = "LukasBerka", email = "lukasberkacek@gmail.com" }

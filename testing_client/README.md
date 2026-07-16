@@ -1,4 +1,4 @@
-# Test Console — a zero-dependency client for the Personal LDP Pod
+# Test Console — a zero-dependency client for the LDP Personal Store
 
 A single static web app for driving a running pod's HTTP API, split into the two
 roles the pod is built around:

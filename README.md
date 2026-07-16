@@ -1,11 +1,10 @@
-# Personal LDP Pod
+# LDP Personal Store
 
-A self-hostable **Personal LDP Pod**: a FastAPI [Linked Data Platform](https://www.w3.org/TR/ldp/)
+A self-hostable **LDP Personal Store**: a FastAPI [Linked Data Platform](https://www.w3.org/TR/ldp/)
 server that stores your RDF and binary data behind a uniform LDP/HTTP surface with a
 read-only SPARQL 1.1 endpoint, and shares precise, query-defined slices of it with chosen
 consumers under revocable, policy-bounded bearer tokens — using only standard LDP/HTTP
-clients, no proprietary client required. This is the implementation artifact of the
-bachelor thesis.
+clients, no proprietary client required.
 
 Managed with [uv](https://docs.astral.sh/uv/), type-checked with [pyrefly](https://pyrefly.org/)
 and linted/formatted with [ruff](https://docs.astral.sh/ruff/).
@@ -55,6 +54,28 @@ For an autoreloading dev server, use the explicit dev-mode alternative:
 ```sh
 uv run fastapi dev ldp_personal_store/main.py
 ```
+
+## Try it — walk the use case scenarios
+
+The **[`demo/`](demo/README.md)** directory shows the pod doing what it is
+built for, as copy-paste walkthroughs of its use case scenarios with the
+expected responses shown: build a **calendar share by hand** — insert events,
+author a SPARQL
+`CONSTRUCT` view, issue a policy-bounded grant, consume it, revoke it — then a
+**photo album** streaming real PNGs through gated links, a **lecture-notes
+hierarchy** shared one course folder at a time, a **shopping list** that stays
+shared while its data churns, and a **reading list** whose review window the
+owner closes live. One script seeds all the data, views, grants, and policies:
+
+```sh
+# both terminals at the repository root
+LDP_ADMIN_TOKEN=devtoken uv run python -m ldp_personal_store.main   # terminal 1
+ADMIN=devtoken ./test_data/seed.sh                                  # terminal 2
+```
+
+Start with [`demo/README.md`](demo/README.md) — a five-minute tour, then one
+page per scenario, played as both the owner (plain `curl`) and the consumer
+(`curl` or the browser [test console](testing_client/README.md)).
 
 ## Run with Docker
 
